@@ -1,0 +1,114 @@
+{
+  "id": "tenacity-544-tryagain-cause",
+  "language": "Python",
+  "repo": {
+    "url": "https://github.com/jd/tenacity.git",
+    "base_ref": "e5179bdab9939a748dc3e88ff21309e12e5361e0^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/jd/tenacity.git <workdir>",
+      "git checkout e5179bdab9939a748dc3e88ff21309e12e5361e0^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/jd/tenacity/issues/544",
+    "fix_pr_url": "https://github.com/jd/tenacity/pull/640",
+    "close_date": "2026-05-22",
+    "fix_diff_lines": 76,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "TryAgain ignores reraise=True",
+    "body": "Hello,\n\nFirst, great library!\n\nI'm running into an issue where I am raising TryAgain, but I am doing this from within an `except` block. I do this because I am using `retry=retry_never` so that I can have full control over when Tenacity will retry versus not. I find this pattern easier to understand than using a function passed to the `retry` kwarg. However, I have noticed that after the last attempt when TryAgain is raised, Tenacity is raising TryAgain itself rather than the underlying exception that it came from. It would be nice if Tenacity here would respect `reraise=True` and raise the underlying exception itself instead of TryAgain. For now, I think I have found a workaround by subclassing `AsyncRetrying` and overriding `__aiter__` but this seems like a hack.\n\nLet me know your thoughts.\n\nThanks!"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_tenacity.py",
+          "tests/test_asyncio.py"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "pyproject.toml",
+      "tests/test_tenacity.py"
+    ],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": [
+          "python",
+          "--version"
+        ]
+      },
+      {
+        "name": "pytest available",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          ".[dev]"
+        ]
+      },
+      {
+        "name": "setup 2 (test deps missing from dev extra)",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "typeguard",
+          "loguru"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "python",
+      "pytest"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 7,
+    "pr_merged_at": "2026-05-22T07:06:13Z",
+    "merge_commit_sha": "e5179bdab9939a748dc3e88ff21309e12e5361e0",
+    "files_changed": [
+      "releasenotes/notes/fix-reraise-tryagain-underlying-exc-e21a26ee95bad0b3.yaml",
+      "tenacity/__init__.py",
+      "tests/test_asyncio.py",
+      "tests/test_tenacity.py"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): tests/test_asyncio.py, tests/test_tenacity.py"
+  }
+}

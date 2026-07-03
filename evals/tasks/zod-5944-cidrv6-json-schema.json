@@ -1,0 +1,100 @@
+{
+  "id": "zod-5944-cidrv6-json-schema",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/colinhacks/zod.git",
+    "base_ref": "f29f2a6db443284eff44db181dbe146df98f92c2^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/colinhacks/zod.git <workdir>",
+      "git checkout f29f2a6db443284eff44db181dbe146df98f92c2^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/colinhacks/zod/issues/5944",
+    "fix_pr_url": "https://github.com/colinhacks/zod/pull/5945",
+    "close_date": "2026-05-04",
+    "fix_diff_lines": 10,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "cidrv6 JSON schema emits an incomplete pattern that rejects valid IPv6 CIDRs",
+    "body": "`z.string().cidrv6()` correctly validates IPv6 CIDRs at runtime using `new URL()`, but the `pattern` emitted by `z.toJSONSchema()` rejects many valid inputs.\n\n**Affected version:** 4.4.3 (current main)\n\n## What happens\n\n```ts\nimport { z } from \"zod\";\n\n// Runtime validation — correct\nz.string().cidrv6().safeParse(\"2001:db8::/32\").success;    // true\nz.string().cidrv6().safeParse(\"2001:db8:1::/48\").success;  // true\n\n// JSON schema — incorrect pattern\nz.toJSONSchema(z.string().cidrv6());\n// {\n//   \"$schema\": \"...\",\n//   \"type\": \"string\",\n//   \"format\": \"cidrv6\",\n//   \"pattern\": \"^(([0-9a-fA-F]{1,4}:){7}...|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\\\\/...\"\n// }\n```\n\nThe exported `pattern` — `regexes.cidrv6` in `src/v4/core/regexes.ts` — only allows **0 or 1 groups before `::`** via `([0-9a-fA-F]{1,4})?::`. Valid CIDRs with 2+ groups before `::` are not matched:\n\n| Input | Zod runtime | JSON schema `pattern` |\n|-------|-------------|----------------------|\n| `2001:db8::/32` | ✅ valid | ❌ no match |\n| `2001:db8:1::/48` | ✅ valid | ❌ no match |\n| `2001:0db8:85a3::/64` | ✅ valid | ❌ no match |\n| `fe80::/10` | ✅ valid | ✅ matches |\n| `::/0` | ✅ valid | ✅ matches |\n\n`2001:db8::/32` is the canonical documentation prefix (RFC 3849) and appears in virtually every IPv6 tutorial and RFC example.\n\n## Why it matters\n\nThe `pattern` field is consumed by OpenAPI validators, API gateways, and frontend validation libraries. Any system that applies the Zod-generated JSON schema directly will reject addresses that Zod itself accepts, silently breaking interoperability.\n\n## Root cause\n\n`$ZodCIDRv6` correctly overrides `inst._zod.check` to use `new URL()`, but `def.pattern` is still set to the incomplete `regexes.cidrv6` before calling `$ZodStringFormat.init()`. `$ZodCheckStringFormat.init()` then adds that pattern to `bag.patterns`, which `stringProcessor` in `json-schema-processors.ts` emits as the `pattern` field.\n\nThe runtime check and the schema metadata diverge at `src/v4/core/schemas.ts:885`:\n\n```ts\ndef.pattern ??= regexes.cidrv6; // not used for validation\n```\n\nThe comment acknowledges the disconnect but the pattern still leaks into the JSON schema output.\n\n## Possible fixes\n\n1. **Fix `regexes.cidrv6`** to correctly cover all compressed forms (similar to how `regexes.ipv6` enumerates eight alternatives).\n2. **Don't set `def.pattern`** for `$ZodCIDRv6` at all, so no `pattern` is emitted in the JSON schema. Validators that need a regex would have to rely on `format: \"cidrv6\"`.\n"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "pnpm",
+          "test",
+          "packages/zod/src/v4/classic/tests/string.test.ts"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "pnpm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "packages/zod/src/v4/classic/tests/string.test.ts"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "pnpm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "corepack",
+          "enable"
+        ]
+      },
+      {
+        "name": "setup 2",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "pnpm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 13,
+    "pr_merged_at": "2026-05-04T18:02:41Z",
+    "merge_commit_sha": "f29f2a6db443284eff44db181dbe146df98f92c2",
+    "files_changed": [
+      "packages/zod/src/v4/classic/tests/string.test.ts",
+      "packages/zod/src/v4/core/regexes.ts"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/string.test.ts"
+  }
+}

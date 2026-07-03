@@ -1,0 +1,91 @@
+{
+  "id": "execa-1193-kill-zero-ci",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/sindresorhus/execa.git",
+    "base_ref": "23ec6f0569b3e42af43294dc807494ebe896e980^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/sindresorhus/execa.git <workdir>",
+      "git checkout 23ec6f0569b3e42af43294dc807494ebe896e980^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/sindresorhus/execa/issues/1193",
+    "fix_pr_url": "https://github.com/sindresorhus/execa/pull/1212",
+    "close_date": "2025-10-27",
+    "fix_diff_lines": 17,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "`subprocess.kill(0)` is broken on Windows since Node 23.4.0",
+    "body": "This is a bug with Node.js, described in https://github.com/nodejs/node/issues/57669.\n\nLet's see how the discussion on the Node.js repository goes before deciding on any workaround."
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "npm",
+          "test",
+          "--",
+          "test/return/result.js"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "npm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "test/return/result.js"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "npm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "npm",
+          "install"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "npm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 19,
+    "pr_merged_at": "2025-10-27T02:28:18Z",
+    "merge_commit_sha": "23ec6f0569b3e42af43294dc807494ebe896e980",
+    "files_changed": [
+      "test/return/result.js"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): test/return/result.js"
+  }
+}

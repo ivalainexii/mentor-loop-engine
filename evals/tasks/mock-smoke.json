@@ -1,0 +1,46 @@
+{
+  "id": "mock-smoke",
+  "language": "Python",
+  "repo": {
+    "url": "__mock__",
+    "base_ref": "HEAD",
+    "checkout_commands": [
+      "runner creates a temporary git repo fixture"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "mock://issue",
+    "fix_pr_url": "mock://pull",
+    "close_date": "2026-06-11",
+    "fix_diff_lines": 1,
+    "training_cutoff_relation": "mock task; not used for claims"
+  },
+  "issue": {
+    "title": "Mock smoke bug",
+    "body": "The smoke fixture should complete the eval runner protocol without calling a real model."
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused smoke",
+        "command": ["python", "-c", "print('focused ok')"]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression smoke",
+        "command": ["python", "-c", "print('regression ok')"]
+      }
+    ]
+  },
+  "env": {
+    "required_files": ["app.py", "setup.py"],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": ["python", "--version"]
+      }
+    ],
+    "required_deps": ["python"]
+  }
+}

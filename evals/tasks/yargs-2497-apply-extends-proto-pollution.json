@@ -1,0 +1,92 @@
+{
+  "id": "yargs-2497-apply-extends-proto-pollution",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/yargs/yargs.git",
+    "base_ref": "437f3a4e0f4166e1f1a3ce023b0331159582746d^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/yargs/yargs.git <workdir>",
+      "git checkout 437f3a4e0f4166e1f1a3ce023b0331159582746d^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/yargs/yargs/issues/2497",
+    "fix_pr_url": "https://github.com/yargs/yargs/pull/2498",
+    "close_date": "2026-02-22",
+    "fix_diff_lines": 8,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Vulnerability Report: Prototype Pollution in `apply-extends`",
+    "body": "\n## Summary\nA prototype pollution vulnerability was identified in the `apply-extends` helper function within `lib/utils/apply-extends.ts`. This function is responsible for merging configuration objects, including those loaded via the `extends` keyword. The vulnerability allowed an attacker to inject properties into `Object.prototype` by including a `__proto__` key in a configuration file.\n\n## Technical Details\n\n### Vulnerability Location\nThe vulnerability existed in the `mergeDeep` function within `lib/utils/apply-extends.ts`. This function recursively merged two objects without checking if the key being merged was `__proto__`.\n\n### Impact\nPrototype pollution can lead to:\n- **Denial of Service (DoS)**: By overwriting methods like `toString` or `valueOf`.\n- **Logic Errors**: By injecting unexpected properties that alter application flow.\n- **Remote Code Execution (RCE)**: In some specific scenarios where polluted properties are used in sensitive operations (e.g., template engines, child process execution).\n\n### Reproduction\nThe following script demonstrated the vulnerability:\n\n```javascript\n// repro_proto.js\nimport { applyExtends } from './build/lib/utils/apply-extends.js';\n// ... setup ...\n\nconst config = JSON.parse('{\"__proto__\":{\"polluted\":true}}');\napplyExtends(config, ...);\n\nconsole.log(config.polluted); // true (before fix)\n```"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "npm",
+          "test",
+          "--",
+          "test/helpers.mjs"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "npm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "test/helpers.mjs"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "npm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "npm",
+          "install"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "npm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 18,
+    "pr_merged_at": "2026-02-22T16:53:18Z",
+    "merge_commit_sha": "437f3a4e0f4166e1f1a3ce023b0331159582746d",
+    "files_changed": [
+      "lib/utils/apply-extends.ts",
+      "test/helpers.mjs"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): test/helpers.mjs"
+  }
+}

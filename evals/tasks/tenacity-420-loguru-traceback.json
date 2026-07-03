@@ -1,0 +1,111 @@
+{
+  "id": "tenacity-420-loguru-traceback",
+  "language": "Python",
+  "repo": {
+    "url": "https://github.com/jd/tenacity.git",
+    "base_ref": "21189c74a98552a3efa96e538b9ef2f25668d094^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/jd/tenacity.git <workdir>",
+      "git checkout 21189c74a98552a3efa96e538b9ef2f25668d094^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/jd/tenacity/issues/420",
+    "fix_pr_url": "https://github.com/jd/tenacity/pull/622",
+    "close_date": "2026-03-05",
+    "fix_diff_lines": 27,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Don't allow passing in loguru",
+    "body": "Loguru is not api compatible with standard logging despite efforts in #294, so it may be best to raise an error or wrap the loguru logger with a standard logger when doing this\r\n\r\n```python\r\nfrom loguru import logger\r\n@retry(\r\n    stop=stop_after_attempt(10),\r\n    wait=wait_random_exponential(multiplier=1, max=10),\r\n    reraise=True,\r\n    before_sleep=before_sleep_log(logger, \"ERROR\"),  # type: ignore\r\n    after=after_log(logger, \"ERROR\"),  # type: ignore\r\n)\r\n```\r\n\r\nAs it can cause a `KeyError` due to [this](https://github.com/Delgan/loguru/issues/1008#issuecomment-1773199101) \r\n\r\n[Here's](https://github.com/Delgan/loguru/issues/1008#issuecomment-1773257442) a wrapping approach which may be the best thing for people to setup in accordance with their own logging needs. Not sure if @Delgan has a better approach though."
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_tenacity.py"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "pyproject.toml",
+      "tenacity/before_sleep.py"
+    ],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": [
+          "python",
+          "--version"
+        ]
+      },
+      {
+        "name": "pytest available",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          ".[dev]"
+        ]
+      },
+      {
+        "name": "setup 2 (test deps missing from dev extra)",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "typeguard",
+          "loguru"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "python",
+      "pytest"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 8,
+    "pr_merged_at": "2026-03-05T07:49:11Z",
+    "merge_commit_sha": "21189c74a98552a3efa96e538b9ef2f25668d094",
+    "files_changed": [
+      "tenacity/_utils.py",
+      "tenacity/before_sleep.py"
+    ],
+    "touches_test_file": false,
+    "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+  }
+}

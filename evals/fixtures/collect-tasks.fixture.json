@@ -1,0 +1,44 @@
+{
+  "search": {
+    "kellyjonbrazil/jc": [
+      {
+        "number": 1234,
+        "title": "Fix parser smoke issue",
+        "html_url": "https://github.com/kellyjonbrazil/jc/pull/1234",
+        "body": "Fixes #1233"
+      }
+    ]
+  },
+  "pulls": {
+    "kellyjonbrazil/jc#1234": {
+      "number": 1234,
+      "title": "Fix parser smoke issue",
+      "html_url": "https://github.com/kellyjonbrazil/jc/pull/1234",
+      "body": "Fixes #1233",
+      "merged_at": "2026-01-15T12:00:00Z",
+      "merge_commit_sha": "abc123def456"
+    }
+  },
+  "files": {
+    "kellyjonbrazil/jc#1234": [
+      {
+        "filename": "jc/parsers/foo.py",
+        "additions": 4,
+        "deletions": 2
+      },
+      {
+        "filename": "tests/test_foo.py",
+        "additions": 8,
+        "deletions": 1
+      }
+    ]
+  },
+  "issues": {
+    "kellyjonbrazil/jc#1233": {
+      "number": 1233,
+      "title": "Parser smoke issue",
+      "html_url": "https://github.com/kellyjonbrazil/jc/issues/1233",
+      "body": "Parser foo returns the wrong shape for sample input."
+    }
+  }
+}

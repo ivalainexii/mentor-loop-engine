@@ -1,0 +1,1 @@
+task_id,arm,run_id,repo,base_ref,issue_url,fix_pr_url,close_date,training_cutoff_relation,lesson_origin_relation,outcome_type,env_preflight_exit,model_exit,focused_exit,regression_exit,regression_baseline_failures,regression_new_failures,gate_exit,review_verdict,artifacts_dir,notes

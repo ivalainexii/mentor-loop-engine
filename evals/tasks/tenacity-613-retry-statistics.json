@@ -1,0 +1,114 @@
+{
+  "id": "tenacity-613-retry-statistics",
+  "language": "Python",
+  "repo": {
+    "url": "https://github.com/jd/tenacity.git",
+    "base_ref": "4c1b7bc7817f967538ed33a7fe114cece26364a5^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/jd/tenacity.git <workdir>",
+      "git checkout 4c1b7bc7817f967538ed33a7fe114cece26364a5^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/jd/tenacity/issues/613",
+    "fix_pr_url": "https://github.com/jd/tenacity/pull/614",
+    "close_date": "2026-02-25",
+    "fix_diff_lines": 47,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "func.retry.statistics is empty during execution",
+    "body": "## Description\n\n`func.retry.statistics` no longer contains `attempt_number` and other keys during execution. This was reported in #78.\n\n```python\nfrom tenacity import retry, stop_after_attempt\n\n@retry(stop=stop_after_attempt(3))\ndef foo():\n    attempt = foo.retry.statistics['attempt_number']  # KeyError!\n    print(f\"Attempt {attempt}...\")\n    if attempt < 3:\n        raise Exception(\"Failed\")\n\nfoo()\n```\n\nRaises `KeyError: 'attempt_number'` because `foo.retry` points to the original `Retrying` object, but `begin()` (which populates statistics) is only called on the internal copy created per invocation.\n\n## Root cause\n\nIn `BaseRetrying.wraps()`, `wrapped_f.retry = self` stores the original `Retrying` instance. But `wrapped_f` creates a copy via `self.copy()` and calls `copy(f, ...)` which runs `copy.begin()` \u2014 populating the *copy's* statistics, not the original's.\n\n`func.statistics` works correctly because it gets reassigned to `copy.statistics` inside `wrapped_f`. But `func.retry.statistics` still points to the original's empty dict.\n\n## Workaround\n\nUse `func.statistics` instead of `func.retry.statistics`."
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/test_tenacity.py",
+          "tests/test_asyncio.py"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "pyproject.toml",
+      "tests/test_tenacity.py"
+    ],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": [
+          "python",
+          "--version"
+        ]
+      },
+      {
+        "name": "pytest available",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          ".[dev]"
+        ]
+      },
+      {
+        "name": "setup 2 (test deps missing from dev extra)",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "typeguard",
+          "loguru"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "python",
+      "pytest"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 10,
+    "pr_merged_at": "2026-02-25T15:39:28Z",
+    "merge_commit_sha": "4c1b7bc7817f967538ed33a7fe114cece26364a5",
+    "files_changed": [
+      "tenacity/__init__.py",
+      "tenacity/asyncio/__init__.py",
+      "tests/test_asyncio.py",
+      "tests/test_tenacity.py"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): tests/test_asyncio.py, tests/test_tenacity.py"
+  }
+}

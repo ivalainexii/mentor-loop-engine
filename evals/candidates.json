@@ -1,0 +1,424 @@
+{
+  "generated_at": "2026-06-11T22:09:00Z",
+  "since": "2025-09-01",
+  "repos": [
+    "kellyjonbrazil/jc",
+    "pallets/click",
+    "tqdm/tqdm",
+    "dateutil/dateutil",
+    "jd/tenacity",
+    "date-fns/date-fns",
+    "colinhacks/zod",
+    "yargs/yargs",
+    "sindresorhus/execa"
+  ],
+  "candidate_count": 19,
+  "candidates": [
+    {
+      "repo": "kellyjonbrazil/jc",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/kellyjonbrazil/jc/issues/694",
+      "issue_number": 694,
+      "issue_title": "lsattr parser fails with filenames containing spaces or newlines",
+      "issue_body": "the parser for lsattr fails on filenames with spaces or newlines (and probably other control characters):\n```\n λ ls\n╭───┬─────────────────────────────────────────┬──────┬──────┬───────────────╮\n│ # │                  name                   │ type │ size │   modified    │\n├───┼─────────────────────────────────────────┼──────┼──────┼───────────────┤\n│ 0 │ \\u{a}--------------e------- test        │ file │  0 B │ 7 hours ago   │\n│ 1 │ \\u{a}test                               │ file │  0 B │ 6 minutes ago │\n│ 2 │ file\\u{a}--------------e------- tempdir │ file │  0 B │ 7 hours ago   │\n│ 3 │ ok ok ok ok ok                          │ file │  0 B │ now           │\n│ 4 │ test                                    │ file │  0 B │ 7 hours ago   │\n│ 5 │ test2                                   │ file │  0 B │ 7 hours ago   │\n│ 6 │ test23                                  │ file │  0 B │ 7 hours ago   │\n╰───┴─────────────────────────────────────────┴──────┴──────┴───────────────╯\n```\n```\n λ lsattr\n--------------e------- ./ok ok ok ok ok\n--------------e------- ./test\n--------------e------- ./test23\n--------------e------- ./\n--------------e------- test\n--------------e------- ./test2\n--------------e------- ./\ntest\n--------------e------- ./file\n--------------e------- tempdir\n```\n```\n λ jc -d lsattr\nError: nu::shell::error\n\n  × jc exection failed\n   ╭─[repl_entry #89:1:4]\n 1 │ jc -d lsattr\n   ·    ────┬────\n   ·        ╰─┤ Traceback (most recent call last):\n   ·          │   File \"/usr/bin/jc\", line 8, in <module>\n   ·          │     sys.exit(main())\n   ·          │              ~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 970, in main\n   ·          │     JcCli().run()\n   ·          │     ~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 952, in run\n   ·          │     self._run()\n   ·          │     ~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 916, in _run\n   ·          │     self.standard_parse_and_print()\n   ·          │     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 808, in standard_parse_and_print\n   ·          │     self.create_normal_output()\n   ·          │     ~~~~~~~~~~~~~~~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 760, in create_normal_output\n   ·          │     self.data_out = self.parser_module.parse(\n   ·          │                     ~~~~~~~~~~~~~~~~~~~~~~~~^\n   ·          │         self.data_in,\n   ·          │         ^^^^^^^^^^^^^\n   ·          │         raw=self.raw,\n   ·          │         ^^^^^^^^^^^^^\n   ·          │         quiet=self.quiet\n   ·          │         ^^^^^^^^^^^^^^^^\n   ·          │     )\n   ·          │     ^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/parsers/lsattr.py\", line 152, in parse\n   ·          │     attributes, file = line.split()\n   ·          │     ^^^^^^^^^^^^^^^^\n   ·          │ ValueError: too many values to unpack (expected 2, got 6)\n   ╰────\n\n```",
+      "fix_pr_url": "https://github.com/kellyjonbrazil/jc/pull/697",
+      "fix_pr_number": 697,
+      "fix_pr_title": "Fix lsattr parser for filenames with spaces",
+      "pr_merged_at": "2026-04-17T17:58:48Z",
+      "merge_commit_sha": "e009338ad15518dc04f6a9a69dbb9cce99c2ce85",
+      "base_commit": "e009338ad15518dc04f6a9a69dbb9cce99c2ce85^1",
+      "files_changed": [
+        "jc/parsers/lsattr.py",
+        "tests/fixtures/ubuntu-20.04/lsattr-spaces.json",
+        "tests/fixtures/ubuntu-20.04/lsattr-spaces.out",
+        "tests/test_lsattr.py"
+      ],
+      "total_diff_lines": 23,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/fixtures/ubuntu-20.04/lsattr-spaces.json, tests/fixtures/ubuntu-20.04/lsattr-spaces.out, tests/test_lsattr.py"
+    },
+    {
+      "repo": "kellyjonbrazil/jc",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/kellyjonbrazil/jc/issues/685",
+      "issue_number": 685,
+      "issue_title": "ifconfig parser: lstrip('0x') incorrectly strips hex mask digits",
+      "issue_body": "## Bug Description\n\nIn `jc/parsers/ifconfig.py`, the `_process()` function converts macOS/FreeBSD-style hex subnet masks (e.g. `0xffffff00`) to dotted-quad format (e.g. `255.255.255.0`). The conversion uses `lstrip('0x')` to remove the `0x` prefix, but `str.lstrip()` strips any combination of the given *characters*, not the literal prefix string.\n\nThis means for masks where the hex digits start with `0` (e.g. `0x00000000` for a `/0` mask), the leading zeros are also stripped, producing an incorrect result.\n\n## Reproduction\n\n```python\nimport jc\n\ndata = (\n    'lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384\\n'\n    '\\toptions=1203<RXCSUM,TXCSUM,TXSTATUS,SW_TIMESTAMP>\\n'\n    '\\tinet 192.168.1.1 netmask 0x00000000\\n'\n)\nresult = jc.parse('ifconfig', data, quiet=True)\nprint(result[0]['ipv4_mask'])\n# Expected: '0.0.0.0'\n# Actual: '' (empty string)\n```\n\n## Root Cause\n\nLine 267 and line 292 in `jc/parsers/ifconfig.py`:\n```python\nnew_mask = new_mask.lstrip('0x')\n```\n\n`str.lstrip('0x')` strips any character in the set `{'0', 'x'}` from the left side. For `'0x00000000'`, this strips `0`, `x`, `0`, `0`, `0`, `0`, `0`, `0`, `0`, `0` - all of them - resulting in an empty string.\n\n## Fix\n\nReplace `lstrip('0x')` with `[2:]` (slice off the first 2 characters) which correctly removes just the `0x` prefix:\n\n```python\nnew_mask = new_mask[2:]\n```\n\nThis bug exists in two places in the `_process()` function (line 267 for the legacy `ipv4_mask` field and line 292 for the `ipv4[]` list items).",
+      "fix_pr_url": "https://github.com/kellyjonbrazil/jc/pull/686",
+      "fix_pr_number": 686,
+      "fix_pr_title": "Fix ifconfig hex mask conversion: lstrip('0x') -> [2:]",
+      "pr_merged_at": "2026-03-30T18:44:58Z",
+      "merge_commit_sha": "20b625860e79fd93ec978a47fbad41e72ceba6db",
+      "base_commit": "20b625860e79fd93ec978a47fbad41e72ceba6db^1",
+      "files_changed": [
+        "tests/test_ifconfig.py"
+      ],
+      "total_diff_lines": 15,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/test_ifconfig.py"
+    },
+    {
+      "repo": "kellyjonbrazil/jc",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/kellyjonbrazil/jc/issues/687",
+      "issue_number": 687,
+      "issue_title": "dir parser: lstrip strips D: drive letter from parent directory path",
+      "issue_body": "## Bug Description\n\nIn `jc/parsers/dir.py`, the `parse()` function extracts the parent directory from lines like:\n```\n Directory of D:\\Users\\testuser\n```\n\nIt uses `line.lstrip(\" Directory of \")` to remove the prefix, but `str.lstrip()` strips any *character* from the given string argument, not the literal prefix. The character set `{' ', 'D', 'i', 'r', 'e', 'c', 't', 'o', 'y', 'f'}` includes the uppercase letter `D`, so when the path starts with `D:\\`, the drive letter `D` is incorrectly stripped, producing `:\\Users\\testuser` instead of `D:\\Users\\testuser`.\n\n## Reproduction\n\n```python\nimport jc\n\ndata = (\n    ' Volume in drive D has no label.\\r\\n'\n    ' Volume Serial Number is 1234-5678\\r\\n'\n    '\\r\\n'\n    ' Directory of D:\\\\Users\\\\testuser\\r\\n'\n    '\\r\\n'\n    '03/24/2021  03:15 PM    <DIR>          .\\r\\n'\n    '03/24/2021  03:15 PM    <DIR>          ..\\r\\n'\n)\nresult = jc.parse('dir', data, quiet=True)\nprint(result[0]['parent'])\n# Expected: 'D:\\Users\\testuser'\n# Actual: ':\\Users\\testuser'\n```\n\n## Root Cause\n\nLine 187 in `jc/parsers/dir.py`:\n```python\nparent_dir = line.lstrip(\" Directory of \")\n```\n\n## Fix\n\nReplace with a fixed-length prefix removal:\n```python\nparent_dir = line[len(\" Directory of \"):]\n```",
+      "fix_pr_url": "https://github.com/kellyjonbrazil/jc/pull/688",
+      "fix_pr_number": 688,
+      "fix_pr_title": "Fix dir parser: lstrip strips D: drive letter from path",
+      "pr_merged_at": "2026-03-30T18:49:51Z",
+      "merge_commit_sha": "6c8aafa2c55e11af6ada1550a9011ad499c7e465",
+      "base_commit": "6c8aafa2c55e11af6ada1550a9011ad499c7e465^1",
+      "files_changed": [
+        "jc/parsers/dir.py",
+        "tests/test_dir.py"
+      ],
+      "total_diff_lines": 23,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/test_dir.py"
+    },
+    {
+      "repo": "kellyjonbrazil/jc",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/kellyjonbrazil/jc/issues/685",
+      "issue_number": 685,
+      "issue_title": "ifconfig parser: lstrip('0x') incorrectly strips hex mask digits",
+      "issue_body": "## Bug Description\n\nIn `jc/parsers/ifconfig.py`, the `_process()` function converts macOS/FreeBSD-style hex subnet masks (e.g. `0xffffff00`) to dotted-quad format (e.g. `255.255.255.0`). The conversion uses `lstrip('0x')` to remove the `0x` prefix, but `str.lstrip()` strips any combination of the given *characters*, not the literal prefix string.\n\nThis means for masks where the hex digits start with `0` (e.g. `0x00000000` for a `/0` mask), the leading zeros are also stripped, producing an incorrect result.\n\n## Reproduction\n\n```python\nimport jc\n\ndata = (\n    'lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384\\n'\n    '\\toptions=1203<RXCSUM,TXCSUM,TXSTATUS,SW_TIMESTAMP>\\n'\n    '\\tinet 192.168.1.1 netmask 0x00000000\\n'\n)\nresult = jc.parse('ifconfig', data, quiet=True)\nprint(result[0]['ipv4_mask'])\n# Expected: '0.0.0.0'\n# Actual: '' (empty string)\n```\n\n## Root Cause\n\nLine 267 and line 292 in `jc/parsers/ifconfig.py`:\n```python\nnew_mask = new_mask.lstrip('0x')\n```\n\n`str.lstrip('0x')` strips any character in the set `{'0', 'x'}` from the left side. For `'0x00000000'`, this strips `0`, `x`, `0`, `0`, `0`, `0`, `0`, `0`, `0`, `0` - all of them - resulting in an empty string.\n\n## Fix\n\nReplace `lstrip('0x')` with `[2:]` (slice off the first 2 characters) which correctly removes just the `0x` prefix:\n\n```python\nnew_mask = new_mask[2:]\n```\n\nThis bug exists in two places in the `_process()` function (line 267 for the legacy `ipv4_mask` field and line 292 for the `ipv4[]` list items).",
+      "fix_pr_url": "https://github.com/kellyjonbrazil/jc/pull/692",
+      "fix_pr_number": 692,
+      "fix_pr_title": "fix: use [2:] instead of lstrip('0x') to strip hex prefix in ifconfig parser",
+      "pr_merged_at": "2026-03-30T17:46:54Z",
+      "merge_commit_sha": "fb5c1b9c94122cefd8ed4ff0a8eb380567a5cc91",
+      "base_commit": "fb5c1b9c94122cefd8ed4ff0a8eb380567a5cc91^1",
+      "files_changed": [
+        "jc/parsers/ifconfig.py"
+      ],
+      "total_diff_lines": 4,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "pallets/click",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/pallets/click/issues/2994",
+      "issue_number": 2994,
+      "issue_title": "`launch()` cannot locate files with spaces in the name on Windows",
+      "issue_body": "_Related to #2868 but with files and `locate=True`_\n\n## Problem\n\nWhen a Windows program uses `click.launch(some_path, locate=True)` and `some_path` contains spaces, then Windows Explorer opens showing the user's Documents folder and not the specified file.\n\nDispatching the call to `powershell` and not `cmd` seems to fix the problem.\n\n## Reproduction\n\n```pwsh\n# Prepare and enter the virtual environment\nmkdir click-demo\ncd click-demo\npython -m venv --upgrade-deps .venv\n.\\.venv\\Scripts\\activate.ps1\n\n# Check versions\npip -V\n# pip 25.1.1 from X:\\scratch\\click-demo\\.venv\\Lib\\site-packages\\pip (python 3.11)\n\n# Install click\npip install click\n\n# Check environment\npip list\n# Package    Version\n# ---------- -------\n# click      8.2.1\n# colorama   0.4.6\n# pip        25.1.1\n# setuptools 80.9.0\n```\n\n**`click-demo.py`**\n```python\nimport pathlib\nimport subprocess\n\nimport click\n\n# No spaces in this path\nroot_folder = pathlib.Path(\"C:\\\\Users\\\\Public\")\n\n# No spaces in this path\nsucceeding_folder = root_folder / \"click-demo\"\nsucceeding_folder.mkdir(exist_ok=True)\nclick.launch(str(succeeding_folder), locate=True)\n\n# Path has spaces!\nfailing_folder = root_folder / \"click demo\"\nfailing_folder.mkdir(exist_ok=True)\nclick.launch(str(failing_folder), locate=True)\n\n# Wrap with powershell\nsubprocess.run(\n    [\n        \"powershell\",\n        \"-Command\",\n        f\"explorer /select,{failing_folder!s}\",\n    ],\n    check=True,\n)\n```\n\nEnvironment:\n\n- Python version: 3.11.9\n- Click version: 8.2.1\n",
+      "fix_pr_url": "https://github.com/pallets/click/pull/3478",
+      "fix_pr_number": 3478,
+      "fix_pr_title": "Fix 2994 launch locate files w spaces windows",
+      "pr_merged_at": "2026-05-19T16:46:31Z",
+      "merge_commit_sha": "9b327da8275bb63bd7bbd43ad8ff9862480da267",
+      "base_commit": "9b327da8275bb63bd7bbd43ad8ff9862480da267^1",
+      "files_changed": [
+        "src/click/_termui_impl.py"
+      ],
+      "total_diff_lines": 2,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "tqdm/tqdm",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/tqdm/tqdm/issues/1701",
+      "issue_number": 1701,
+      "issue_title": "Pandas 3.0.0 breaks progress_apply with pd.Series",
+      "issue_body": "There seems to be a breaking change in Pandas `3.0.0` on how the internals of Series work, and the pandas integration raises an exception.\n\nHow to reproduce:\n```\nimport tqdm\ntqdm.tqdm.pandas()\n\ns = pd.Series([1, 2, 3, 4, 5])\n\ns = s.progress_apply(lambda x: x * 2)\n```\n\nThe following code snippet raises this error:\n```\n---------------------------------------------------------------------------\nImportError                               Traceback (most recent call last)\nFile c:\\Data\\T\\.venv\\Lib\\site-packages\\tqdm\\std.py:897, in tqdm.pandas.<locals>.inner_generator.<locals>.inner(df, func, *args, **kwargs)\n    896 try:  # pandas>=1.3.0\n--> 897     from pandas.core.common import is_builtin_func\n    898 except ImportError:\n\nImportError: cannot import name 'is_builtin_func' from 'pandas.core.common' (c:\\Data\\Realit\\realit-file-renamer\\.venv\\Lib\\site-packages\\pandas\\core\\common.py)\n\nDuring handling of the above exception, another exception occurred:\n\nAttributeError                            Traceback (most recent call last)\n~\\AppData\\Local\\Temp\\ipykernel_14044\\1174839030.py in ?()\n      7 tqdm.tqdm.pandas()\n      8 \n      9 s = pd.Series([1, 2, 3, 4, 5])\n     10 \n---> 11 s = s.progress_apply(lambda x: x * 2)\n\nc:\\Data\\T\\.venv\\Lib\\site-packages\\tqdm\\std.py in ?(df, func, *args, **kwargs)\n    895 \n    896                 try:  # pandas>=1.3.0\n    897                     from pandas.core.common import is_builtin_func\n    898                 except ImportError:\n--> 899                     is_builtin_func = df._is_builtin_func\n    900                 try:\n    901                     func = is_builtin_func(func)\n    902                 except TypeError:\n\nc:\\Data\\T\\.venv\\Lib\\site-packages\\pandas\\core\\generic.py in ?(self, name)\n   6202             and name not in self._accessors\n   6203             and self._info_axis._can_hold_identifiers_and_holds_name(name)\n   6204         ):\n   6205             return self[name]\n-> 6206         return object.__getattribute__(self, name)\n\nAttributeError: 'Series' object has no attribute '_is_builtin_func'\n```\n\nMy platform configuration, and versions:\n```\ntqdm version: 4.67.1\nPython version: 3.12.9 (main, Feb 12 2025, 14:52:31) [MSC v.1942 64 bit (AMD64)]\nPlatform: win32\nPandas version: 3.0.0\n```\n",
+      "fix_pr_url": "https://github.com/tqdm/tqdm/pull/1703",
+      "fix_pr_number": 1703,
+      "fix_pr_title": "Fix pandas 3.0 compatibility and negative interval display",
+      "pr_merged_at": "2026-01-30T16:27:36Z",
+      "merge_commit_sha": "14d72e2c18ba34363d629a43794a47513a9aa368",
+      "base_commit": "14d72e2c18ba34363d629a43794a47513a9aa368^1",
+      "files_changed": [
+        "tests/tests_pandas.py",
+        "tests/tests_tqdm.py",
+        "tqdm/std.py"
+      ],
+      "total_diff_lines": 53,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/tests_pandas.py, tests/tests_tqdm.py"
+    },
+    {
+      "repo": "jd/tenacity",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/jd/tenacity/issues/544",
+      "issue_number": 544,
+      "issue_title": "TryAgain ignores reraise=True",
+      "issue_body": "Hello,\n\nFirst, great library!\n\nI'm running into an issue where I am raising TryAgain, but I am doing this from within an `except` block. I do this because I am using `retry=retry_never` so that I can have full control over when Tenacity will retry versus not. I find this pattern easier to understand than using a function passed to the `retry` kwarg. However, I have noticed that after the last attempt when TryAgain is raised, Tenacity is raising TryAgain itself rather than the underlying exception that it came from. It would be nice if Tenacity here would respect `reraise=True` and raise the underlying exception itself instead of TryAgain. For now, I think I have found a workaround by subclassing `AsyncRetrying` and overriding `__aiter__` but this seems like a hack.\n\nLet me know your thoughts.\n\nThanks!",
+      "fix_pr_url": "https://github.com/jd/tenacity/pull/640",
+      "fix_pr_number": 640,
+      "fix_pr_title": "fix: reraise underlying exception when TryAgain wraps a cause",
+      "pr_merged_at": "2026-05-22T07:06:13Z",
+      "merge_commit_sha": "e5179bdab9939a748dc3e88ff21309e12e5361e0",
+      "base_commit": "e5179bdab9939a748dc3e88ff21309e12e5361e0^1",
+      "files_changed": [
+        "releasenotes/notes/fix-reraise-tryagain-underlying-exc-e21a26ee95bad0b3.yaml",
+        "tenacity/__init__.py",
+        "tests/test_asyncio.py",
+        "tests/test_tenacity.py"
+      ],
+      "total_diff_lines": 76,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/test_asyncio.py, tests/test_tenacity.py"
+    },
+    {
+      "repo": "jd/tenacity",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/jd/tenacity/issues/420",
+      "issue_number": 420,
+      "issue_title": "Don't allow passing in loguru",
+      "issue_body": "Loguru is not api compatible with standard logging despite efforts in #294, so it may be best to raise an error or wrap the loguru logger with a standard logger when doing this\r\n\r\n```python\r\nfrom loguru import logger\r\n@retry(\r\n    stop=stop_after_attempt(10),\r\n    wait=wait_random_exponential(multiplier=1, max=10),\r\n    reraise=True,\r\n    before_sleep=before_sleep_log(logger, \"ERROR\"),  # type: ignore\r\n    after=after_log(logger, \"ERROR\"),  # type: ignore\r\n)\r\n```\r\n\r\nAs it can cause a `KeyError` due to [this](https://github.com/Delgan/loguru/issues/1008#issuecomment-1773199101) \r\n\r\n[Here's](https://github.com/Delgan/loguru/issues/1008#issuecomment-1773257442) a wrapping approach which may be the best thing for people to setup in accordance with their own logging needs. Not sure if @Delgan has a better approach though.",
+      "fix_pr_url": "https://github.com/jd/tenacity/pull/622",
+      "fix_pr_number": 622,
+      "fix_pr_title": "fix: format traceback inline for loguru compatibility",
+      "pr_merged_at": "2026-03-05T07:49:11Z",
+      "merge_commit_sha": "21189c74a98552a3efa96e538b9ef2f25668d094",
+      "base_commit": "21189c74a98552a3efa96e538b9ef2f25668d094^1",
+      "files_changed": [
+        "tenacity/_utils.py",
+        "tenacity/before_sleep.py"
+      ],
+      "total_diff_lines": 27,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "jd/tenacity",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/jd/tenacity/issues/554",
+      "issue_number": 554,
+      "issue_title": "mypy type errors after upgrading tenacity to 9.1.3: logging.Logger rejected",
+      "issue_body": "After upgrading Tenacity, mypy reports errors like:\n\n```\nerror: Argument 1 to \"before_sleep_log\" has incompatible type \"Logger\"; expected \"LoggerProtocol\"  [arg-type]\n```\n\nI'm using the normal Python logging logger. \nThis should already reproduce the error:\n```python\n  import logging\n  from tenacity.before_sleep import before_sleep_log\n\n  log = logging.getLogger(__name__)\n  before_sleep_log(log, logging.INFO)  # mypy arg-type error\n```",
+      "fix_pr_url": "https://github.com/jd/tenacity/pull/586",
+      "fix_pr_number": 586,
+      "fix_pr_title": "fix: make LoggerProtocol compatible with logging.Logger",
+      "pr_merged_at": "2026-02-19T09:49:00Z",
+      "merge_commit_sha": "773f4386e596f52d5c5ed39a8f511c7b56936986",
+      "base_commit": "773f4386e596f52d5c5ed39a8f511c7b56936986^1",
+      "files_changed": [
+        "tenacity/_utils.py"
+      ],
+      "total_diff_lines": 2,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "jd/tenacity",
+      "language_hint": "Python",
+      "issue_url": "https://github.com/jd/tenacity/issues/613",
+      "issue_number": 613,
+      "issue_title": "func.retry.statistics is empty during execution",
+      "issue_body": "## Description\n\n`func.retry.statistics` no longer contains `attempt_number` and other keys during execution. This was reported in #78.\n\n```python\nfrom tenacity import retry, stop_after_attempt\n\n@retry(stop=stop_after_attempt(3))\ndef foo():\n    attempt = foo.retry.statistics['attempt_number']  # KeyError!\n    print(f\"Attempt {attempt}...\")\n    if attempt < 3:\n        raise Exception(\"Failed\")\n\nfoo()\n```\n\nRaises `KeyError: 'attempt_number'` because `foo.retry` points to the original `Retrying` object, but `begin()` (which populates statistics) is only called on the internal copy created per invocation.\n\n## Root cause\n\nIn `BaseRetrying.wraps()`, `wrapped_f.retry = self` stores the original `Retrying` instance. But `wrapped_f` creates a copy via `self.copy()` and calls `copy(f, ...)` which runs `copy.begin()` — populating the *copy's* statistics, not the original's.\n\n`func.statistics` works correctly because it gets reassigned to `copy.statistics` inside `wrapped_f`. But `func.retry.statistics` still points to the original's empty dict.\n\n## Workaround\n\nUse `func.statistics` instead of `func.retry.statistics`.",
+      "fix_pr_url": "https://github.com/jd/tenacity/pull/614",
+      "fix_pr_number": 614,
+      "fix_pr_title": "fix: sync func.retry.statistics with copy's statistics",
+      "pr_merged_at": "2026-02-25T15:39:28Z",
+      "merge_commit_sha": "4c1b7bc7817f967538ed33a7fe114cece26364a5",
+      "base_commit": "4c1b7bc7817f967538ed33a7fe114cece26364a5^1",
+      "files_changed": [
+        "tenacity/__init__.py",
+        "tenacity/asyncio/__init__.py",
+        "tests/test_asyncio.py",
+        "tests/test_tenacity.py"
+      ],
+      "total_diff_lines": 47,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): tests/test_asyncio.py, tests/test_tenacity.py"
+    },
+    {
+      "repo": "date-fns/date-fns",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/date-fns/date-fns/issues/4129",
+      "issue_number": 4129,
+      "issue_title": "Problem in set documentation",
+      "issue_body": "\nThere is an issue with the [set documentation](https://date-fns.org/v4.1.0/docs/set#)\n\n### The problem with set documentation\n\nCurrent state of the documentation:\n\n> Set 12 PM to 1 September 2014 01:23:45 to 1 September 2014 12:00:00:\n> ```js\n> const result = set(new Date(2014, 8, 1, 1, 23, 45), { hours: 12 })\n> //=> Mon Sep 01 2014 12:23:45\n> ```\n\nThe time is changed to 12:23:45 and the output comment says so, but the sentence above says it would change to 12:00:00 instead.\n\n### Suggested edits\n\n\"Set 12 PM to 1 September 2014 01:23:45 to 1 September 2014 12:**23:45**:\"\n",
+      "fix_pr_url": "https://github.com/date-fns/date-fns/pull/4206",
+      "fix_pr_number": 4206,
+      "fix_pr_title": "docs: fix set example description",
+      "pr_merged_at": "2026-06-02T21:19:24Z",
+      "merge_commit_sha": "eefe78408f59540b1cac8e99adad0813e5d9adec",
+      "base_commit": "eefe78408f59540b1cac8e99adad0813e5d9adec^1",
+      "files_changed": [
+        "pkgs/core/src/set/index.ts"
+      ],
+      "total_diff_lines": 2,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "date-fns/date-fns",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/date-fns/date-fns/issues/4148",
+      "issue_number": 4148,
+      "issue_title": "Cannot parse \"Jänner\" with deAT locale",
+      "issue_body": "It is not possible to parse the string \"6. Jänner\" with the locale set to deAT.\n\nSource encoding is UTF-8\nNode.js version 22.20.0\n\nSource:\n```javascript\nimport { de, deAT } from \"date-fns/locale\";\nimport { parse as dateFnsParse } from \"date-fns/parse\";\n\nvar options = {};\n\nconsole.log(\"16. Jänner\");\noptions.locale = deAT;\nvar result = dateFnsParse(\"16. Jänner\", \"dd. MMMM\", new Date(), options);\nconsole.log(result.toDateString());\nconsole.log(\"\\n\\n\");\n\nconsole.log(\"16. J\\xE4nner\");\noptions.locale = deAT;\nvar result = dateFnsParse(\"16. J\\xE4nner\", \"dd. MMMM\", new Date(), options);\nconsole.log(result.toDateString());\nconsole.log(\"\\n\\n\");\n\nconsole.log(\"16. Januar\");\noptions.locale = de;\nvar result = dateFnsParse(\"16. Januar\", \"dd. MMMM\", new Date(), options);\nconsole.log(result.toDateString());\nconsole.log(\"\\n\\n\");\n```\n\nProduces:\n```\n\n> nodejs-test@0.1.0 run\n> node index.js\n\n16. Jänner\nInvalid Date\n\n\n\n16. Jänner\nInvalid Date\n\n\n\n16. Januar\nFri Jan 16 2026\n\n\n\n```",
+      "fix_pr_url": "https://github.com/date-fns/date-fns/pull/4179",
+      "fix_pr_number": 4179,
+      "fix_pr_title": "fix(de-AT): support parsing \"Jänner\" with de-AT locale",
+      "pr_merged_at": "2026-05-18T12:23:17Z",
+      "merge_commit_sha": "06881f71f0cd9f125b5319069ef090eba2b1f40a",
+      "base_commit": "06881f71f0cd9f125b5319069ef090eba2b1f40a^1",
+      "files_changed": [
+        "src/locale/de/_lib/match/index.ts"
+      ],
+      "total_diff_lines": 2,
+      "touches_test_file": false,
+      "verification_hint": "No touched test file found; inspect PR for focused verification before solidifying."
+    },
+    {
+      "repo": "colinhacks/zod",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/colinhacks/zod/issues/5944",
+      "issue_number": 5944,
+      "issue_title": "cidrv6 JSON schema emits an incomplete pattern that rejects valid IPv6 CIDRs",
+      "issue_body": "`z.string().cidrv6()` correctly validates IPv6 CIDRs at runtime using `new URL()`, but the `pattern` emitted by `z.toJSONSchema()` rejects many valid inputs.\n\n**Affected version:** 4.4.3 (current main)\n\n## What happens\n\n```ts\nimport { z } from \"zod\";\n\n// Runtime validation — correct\nz.string().cidrv6().safeParse(\"2001:db8::/32\").success;    // true\nz.string().cidrv6().safeParse(\"2001:db8:1::/48\").success;  // true\n\n// JSON schema — incorrect pattern\nz.toJSONSchema(z.string().cidrv6());\n// {\n//   \"$schema\": \"...\",\n//   \"type\": \"string\",\n//   \"format\": \"cidrv6\",\n//   \"pattern\": \"^(([0-9a-fA-F]{1,4}:){7}...|([0-9a-fA-F]{1,4})?::([0-9a-fA-F]{1,4}:?){0,6})\\\\/...\"\n// }\n```\n\nThe exported `pattern` — `regexes.cidrv6` in `src/v4/core/regexes.ts` — only allows **0 or 1 groups before `::`** via `([0-9a-fA-F]{1,4})?::`. Valid CIDRs with 2+ groups before `::` are not matched:\n\n| Input | Zod runtime | JSON schema `pattern` |\n|-------|-------------|----------------------|\n| `2001:db8::/32` | ✅ valid | ❌ no match |\n| `2001:db8:1::/48` | ✅ valid | ❌ no match |\n| `2001:0db8:85a3::/64` | ✅ valid | ❌ no match |\n| `fe80::/10` | ✅ valid | ✅ matches |\n| `::/0` | ✅ valid | ✅ matches |\n\n`2001:db8::/32` is the canonical documentation prefix (RFC 3849) and appears in virtually every IPv6 tutorial and RFC example.\n\n## Why it matters\n\nThe `pattern` field is consumed by OpenAPI validators, API gateways, and frontend validation libraries. Any system that applies the Zod-generated JSON schema directly will reject addresses that Zod itself accepts, silently breaking interoperability.\n\n## Root cause\n\n`$ZodCIDRv6` correctly overrides `inst._zod.check` to use `new URL()`, but `def.pattern` is still set to the incomplete `regexes.cidrv6` before calling `$ZodStringFormat.init()`. `$ZodCheckStringFormat.init()` then adds that pattern to `bag.patterns`, which `stringProcessor` in `json-schema-processors.ts` emits as the `pattern` field.\n\nThe runtime check and the schema metadata diverge at `src/v4/core/schemas.ts:885`:\n\n```ts\ndef.pattern ??= regexes.cidrv6; // not used for validation\n```\n\nThe comment acknowledges the disconnect but the pattern still leaks into the JSON schema output.\n\n## Possible fixes\n\n1. **Fix `regexes.cidrv6`** to correctly cover all compressed forms (similar to how `regexes.ipv6` enumerates eight alternatives).\n2. **Don't set `def.pattern`** for `$ZodCIDRv6` at all, so no `pattern` is emitted in the JSON schema. Validators that need a regex would have to rely on `format: \"cidrv6\"`.\n",
+      "fix_pr_url": "https://github.com/colinhacks/zod/pull/5945",
+      "fix_pr_number": 5945,
+      "fix_pr_title": "fix(v4): cidrv6 JSON schema pattern matches runtime",
+      "pr_merged_at": "2026-05-04T18:02:41Z",
+      "merge_commit_sha": "f29f2a6db443284eff44db181dbe146df98f92c2",
+      "base_commit": "f29f2a6db443284eff44db181dbe146df98f92c2^1",
+      "files_changed": [
+        "packages/zod/src/v4/classic/tests/string.test.ts",
+        "packages/zod/src/v4/core/regexes.ts"
+      ],
+      "total_diff_lines": 10,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/string.test.ts"
+    },
+    {
+      "repo": "colinhacks/zod",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/colinhacks/zod/issues/5273",
+      "issue_number": 5273,
+      "issue_title": "Workaround for \"Dynamic catch values are not supported in JSON Schema\"",
+      "issue_body": "When using `z.toJSONSchema`, I noticed that `.catch((ctx) => somethingCustom(ctx))` was causing a crash. There was not much info on this edge case in docs and discussions, so I decided to create this issue just in case.\n\nRelevant source:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L561-L573\n\nRelevant test:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/classic/tests/to-json-schema.test.ts#L281-L284\n\n`z.toJSONSchema` supports `unrepresentable: \"any\"` which could potentially used for dynamic catch, similarly to how it's done for `transform()` and others:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L521-L526\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L617-L628\n\nIt'd be also great if https://zod.dev/json-schema was updated to reflect the caveat of dynamic catch.\n\nHappy to help with a PR if the above makes sense.\n\n---\n\nIn the meantime, I [patched](https://pnpm.io/cli/patch) the logic locally like this:\n\n```diff\n} catch {\n-   throw new Error(\"Dynamic catch values are not supported in JSON Schema\");\n+   // Assume that catch does not change the type of the schema\n+   // Context: https://github.com/colinhacks/zod/issues/5273\n+   break;\n}\n```\n\nIt's more like `unrepresentable: \"passthrough\"` (which does not exist yet) rather than `unrepresentable: \"any\"`.",
+      "fix_pr_url": "https://github.com/colinhacks/zod/pull/5925",
+      "fix_pr_number": 5925,
+      "fix_pr_title": "fix(v4): allow dynamic `.catch()` under `unrepresentable: \"any\"` (#5273)",
+      "pr_merged_at": "2026-05-04T16:52:41Z",
+      "merge_commit_sha": "fbe8ad1b709460fc45d88fdcb5eca591198de60d",
+      "base_commit": "fbe8ad1b709460fc45d88fdcb5eca591198de60d^1",
+      "files_changed": [
+        "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+        "packages/zod/src/v4/core/json-schema-processors.ts"
+      ],
+      "total_diff_lines": 11,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+    },
+    {
+      "repo": "colinhacks/zod",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/colinhacks/zod/issues/5937",
+      "issue_number": 5937,
+      "issue_title": "Upgrading from 4.3.6 to 4.4.x causes issues with preprocess + catch",
+      "issue_body": "I am using zod to parse payload we received from URLSearchParams, which requires transforming comma-separated string values into an array of string (which can potentially be empty/undefined). In v4.3.6 and below, the following schema works:\n\n```ts\nz.object({\n  area: z.preprocess(v => v ? v.toString().split(',') : [], z.array(z.string())).catch([])\n})\n```\n\nAnd the payload is as follow:\n\n```ts\n{}\n```\n\n[v4.3.6 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMAGYMADZokGUwAC0sABMAWVVlFAAzeLAYcKA), which works without any issue ✅ \n\nHowever, after upgrading to 4.4.x (4.4.0, 4.4.1, and 4.4.2), I get the following error:\n\n```text\ninvalid_type - Invalid input: expected nonoptional, received undefined\n```\n\nAll these versions are showing the same error:\n\n- [v4.4.0 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoAGaJBlMAAtLAATAFlVZRQAM3iwGHCgA)\n- [v4.4.1 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoBGaJBlMAAtLAATAFlVZRQAM3iwGHCgA)\n- [v4.4.2 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoAmaJBlMAAtLAATAFlVZRQAM3iwGHCgA)",
+      "fix_pr_url": "https://github.com/colinhacks/zod/pull/5939",
+      "fix_pr_number": 5939,
+      "fix_pr_title": "fix(v4): restore catch handling for absent object keys (#5937)",
+      "pr_merged_at": "2026-05-03T21:38:02Z",
+      "merge_commit_sha": "1cab69383fcdeae2a366d5e2a2fc4d8fc765d168",
+      "base_commit": "1cab69383fcdeae2a366d5e2a2fc4d8fc765d168^1",
+      "files_changed": [
+        "packages/zod/src/v4/classic/tests/catch.test.ts",
+        "packages/zod/src/v4/classic/tests/partial.test.ts",
+        "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+        "packages/zod/src/v4/core/schemas.ts"
+      ],
+      "total_diff_lines": 66,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/catch.test.ts, packages/zod/src/v4/classic/tests/partial.test.ts, packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+    },
+    {
+      "repo": "colinhacks/zod",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/colinhacks/zod/issues/5824",
+      "issue_number": 5824,
+      "issue_title": "Falsy prefault() values are not emitted by toJsonSchema()",
+      "issue_body": "Truthy prefaults work as expected…\n```ts\nz.boolean().prefault(true).toJSONSchema({ io: \"input\" });\n\n// {\n//   $schema: \"https://json-schema.org/draft/2020-12/schema\",\n//   default: true,\n//   type: \"boolean\"\n// }\n```\n\nBut falsy prefaults do not…\n```ts\nz.boolean().prefault(false).toJSONSchema({ io: \"input\" });\n\n// {\n//   $schema: \"https://json-schema.org/draft/2020-12/schema\",\n//   type: \"boolean\"\n// }\n```\n\nCaused by [this line](https://github.com/colinhacks/zod/blob/c7805073fef5b6b8857307c3d4b3597a70613bc2/packages/zod/src/v4/core/to-json-schema.ts#L208)\n\nSuggested patch:\n\n```diff\n- if (ctx.io === \"input\" && result.schema._prefault) result.schema.default ??= result.schema._prefault;\n+ if (ctx.io === \"input\" && \"_prefault\" in result.schema) result.schema.default ??= result.schema._prefault;\n```",
+      "fix_pr_url": "https://github.com/colinhacks/zod/pull/5893",
+      "fix_pr_number": 5893,
+      "fix_pr_title": "fix(v4): emit falsy prefault values in toJSONSchema (#5824)",
+      "pr_merged_at": "2026-04-29T03:01:15Z",
+      "merge_commit_sha": "ebc8287ca206402cf3a9aceb745b204493cbadfb",
+      "base_commit": "ebc8287ca206402cf3a9aceb745b204493cbadfb^1",
+      "files_changed": [
+        "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+        "packages/zod/src/v4/core/to-json-schema.ts"
+      ],
+      "total_diff_lines": 34,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+    },
+    {
+      "repo": "colinhacks/zod",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/colinhacks/zod/issues/5296",
+      "issue_number": 5296,
+      "issue_title": "Records do not transform keys, even though the Typescript types says it does.",
+      "issue_body": "Consider the following schema:\n\n```typescript\nz.record(\n  z.literal(\"a\").transform(() => \"b\" as const),\n  z.string(),\n);\n```\n(playground: https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQCcYQPZYAmAFADoB2ABJZgDYCWALjFgrWSAqSAJQaOtyYAGYE4xYj0oBeAHyVuAI26UEYSviGMeAGgrVMYAfXIBzSXvJ8BCIaKzjCCRgkoB6AFSVklAEq4CQgAeJW4dSiMsE1N5DzcZeScXHgBuChAdEAA3NgBXGDAUAG0QYAQfbgApPChybgBfEABdTKyWMHo8chQQABYMAEZBgYyQejAALTxCAFkTehRhNjAYeqA)\n\nI would expect it to transform the `a` key of the input into a `b`, but it doesn’t. Is it expected?\n\nMaybe it is a design decision, but in that case there is still something wrong because when chaining a transform, the input type for the transforming function is `Record<\"b\", string>`, so it looks like it assumes the keys get transformed.",
+      "fix_pr_url": "https://github.com/colinhacks/zod/pull/5891",
+      "fix_pr_number": 5891,
+      "fix_pr_title": "fix(v4): apply key schema transforms in z.record()",
+      "pr_merged_at": "2026-04-29T01:53:02Z",
+      "merge_commit_sha": "61d7bedb873bf8185162bb51d027fd8acf2710ee",
+      "base_commit": "61d7bedb873bf8185162bb51d027fd8acf2710ee^1",
+      "files_changed": [
+        "packages/zod/src/v4/classic/tests/record.test.ts",
+        "packages/zod/src/v4/core/schemas.ts"
+      ],
+      "total_diff_lines": 81,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/record.test.ts"
+    },
+    {
+      "repo": "yargs/yargs",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/yargs/yargs/issues/2497",
+      "issue_number": 2497,
+      "issue_title": "Vulnerability Report: Prototype Pollution in `apply-extends`",
+      "issue_body": "\n## Summary\nA prototype pollution vulnerability was identified in the `apply-extends` helper function within `lib/utils/apply-extends.ts`. This function is responsible for merging configuration objects, including those loaded via the `extends` keyword. The vulnerability allowed an attacker to inject properties into `Object.prototype` by including a `__proto__` key in a configuration file.\n\n## Technical Details\n\n### Vulnerability Location\nThe vulnerability existed in the `mergeDeep` function within `lib/utils/apply-extends.ts`. This function recursively merged two objects without checking if the key being merged was `__proto__`.\n\n### Impact\nPrototype pollution can lead to:\n- **Denial of Service (DoS)**: By overwriting methods like `toString` or `valueOf`.\n- **Logic Errors**: By injecting unexpected properties that alter application flow.\n- **Remote Code Execution (RCE)**: In some specific scenarios where polluted properties are used in sensitive operations (e.g., template engines, child process execution).\n\n### Reproduction\nThe following script demonstrated the vulnerability:\n\n```javascript\n// repro_proto.js\nimport { applyExtends } from './build/lib/utils/apply-extends.js';\n// ... setup ...\n\nconst config = JSON.parse('{\"__proto__\":{\"polluted\":true}}');\napplyExtends(config, ...);\n\nconsole.log(config.polluted); // true (before fix)\n```",
+      "fix_pr_url": "https://github.com/yargs/yargs/pull/2498",
+      "fix_pr_number": 2498,
+      "fix_pr_title": "fix: prototype pollution vulnerability in apply-extends",
+      "pr_merged_at": "2026-02-22T16:53:18Z",
+      "merge_commit_sha": "437f3a4e0f4166e1f1a3ce023b0331159582746d",
+      "base_commit": "437f3a4e0f4166e1f1a3ce023b0331159582746d^1",
+      "files_changed": [
+        "lib/utils/apply-extends.ts",
+        "test/helpers.mjs"
+      ],
+      "total_diff_lines": 8,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): test/helpers.mjs"
+    },
+    {
+      "repo": "sindresorhus/execa",
+      "language_hint": "JavaScript/TypeScript",
+      "issue_url": "https://github.com/sindresorhus/execa/issues/1193",
+      "issue_number": 1193,
+      "issue_title": "`subprocess.kill(0)` is broken on Windows since Node 23.4.0",
+      "issue_body": "This is a bug with Node.js, described in https://github.com/nodejs/node/issues/57669.\n\nLet's see how the discussion on the Node.js repository goes before deciding on any workaround.",
+      "fix_pr_url": "https://github.com/sindresorhus/execa/pull/1212",
+      "fix_pr_number": 1212,
+      "fix_pr_title": "Fix CI tests related to `.kill(0)`",
+      "pr_merged_at": "2025-10-27T02:28:18Z",
+      "merge_commit_sha": "23ec6f0569b3e42af43294dc807494ebe896e980",
+      "base_commit": "23ec6f0569b3e42af43294dc807494ebe896e980^1",
+      "files_changed": [
+        "test/return/result.js"
+      ],
+      "total_diff_lines": 17,
+      "touches_test_file": true,
+      "verification_hint": "Prefer focused verification from touched test file(s): test/return/result.js"
+    }
+  ],
+  "failures": [],
+  "notes": [
+    "Candidates are raw. Human selection happens in a second pass.",
+    "Pre-fix checkout should resolve base_commit after clone, e.g. git rev-parse <merge_commit_sha>^1."
+  ]
+}

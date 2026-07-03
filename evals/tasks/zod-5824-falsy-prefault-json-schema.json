@@ -1,0 +1,100 @@
+{
+  "id": "zod-5824-falsy-prefault-json-schema",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/colinhacks/zod.git",
+    "base_ref": "ebc8287ca206402cf3a9aceb745b204493cbadfb^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/colinhacks/zod.git <workdir>",
+      "git checkout ebc8287ca206402cf3a9aceb745b204493cbadfb^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/colinhacks/zod/issues/5824",
+    "fix_pr_url": "https://github.com/colinhacks/zod/pull/5893",
+    "close_date": "2026-04-29",
+    "fix_diff_lines": 34,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Falsy prefault() values are not emitted by toJsonSchema()",
+    "body": "Truthy prefaults work as expected…\n```ts\nz.boolean().prefault(true).toJSONSchema({ io: \"input\" });\n\n// {\n//   $schema: \"https://json-schema.org/draft/2020-12/schema\",\n//   default: true,\n//   type: \"boolean\"\n// }\n```\n\nBut falsy prefaults do not…\n```ts\nz.boolean().prefault(false).toJSONSchema({ io: \"input\" });\n\n// {\n//   $schema: \"https://json-schema.org/draft/2020-12/schema\",\n//   type: \"boolean\"\n// }\n```\n\nCaused by [this line](https://github.com/colinhacks/zod/blob/c7805073fef5b6b8857307c3d4b3597a70613bc2/packages/zod/src/v4/core/to-json-schema.ts#L208)\n\nSuggested patch:\n\n```diff\n- if (ctx.io === \"input\" && result.schema._prefault) result.schema.default ??= result.schema._prefault;\n+ if (ctx.io === \"input\" && \"_prefault\" in result.schema) result.schema.default ??= result.schema._prefault;\n```"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "pnpm",
+          "test",
+          "packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "pnpm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "pnpm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "corepack",
+          "enable"
+        ]
+      },
+      {
+        "name": "setup 2",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "pnpm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 16,
+    "pr_merged_at": "2026-04-29T03:01:15Z",
+    "merge_commit_sha": "ebc8287ca206402cf3a9aceb745b204493cbadfb",
+    "files_changed": [
+      "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+      "packages/zod/src/v4/core/to-json-schema.ts"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+  }
+}

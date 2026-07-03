@@ -1,0 +1,104 @@
+{
+  "id": "zod-5937-catch-absent-object-keys",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/colinhacks/zod.git",
+    "base_ref": "1cab69383fcdeae2a366d5e2a2fc4d8fc765d168^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/colinhacks/zod.git <workdir>",
+      "git checkout 1cab69383fcdeae2a366d5e2a2fc4d8fc765d168^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/colinhacks/zod/issues/5937",
+    "fix_pr_url": "https://github.com/colinhacks/zod/pull/5939",
+    "close_date": "2026-05-03",
+    "fix_diff_lines": 66,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Upgrading from 4.3.6 to 4.4.x causes issues with preprocess + catch",
+    "body": "I am using zod to parse payload we received from URLSearchParams, which requires transforming comma-separated string values into an array of string (which can potentially be empty/undefined). In v4.3.6 and below, the following schema works:\n\n```ts\nz.object({\n  area: z.preprocess(v => v ? v.toString().split(',') : [], z.array(z.string())).catch([])\n})\n```\n\nAnd the payload is as follow:\n\n```ts\n{}\n```\n\n[v4.3.6 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMAGYMADZokGUwAC0sABMAWVVlFAAzeLAYcKA), which works without any issue ✅ \n\nHowever, after upgrading to 4.4.x (4.4.0, 4.4.1, and 4.4.2), I get the following error:\n\n```text\ninvalid_type - Invalid input: expected nonoptional, received undefined\n```\n\nAll these versions are showing the same error:\n\n- [v4.4.0 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoAGaJBlMAAtLAATAFlVZRQAM3iwGHCgA)\n- [v4.4.1 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoBGaJBlMAAtLAATAFlVZRQAM3iwGHCgA)\n- [v4.4.2 on Zod Playground](https://zod-playground.vercel.app?appdata=N4IgzgxgFgpgtgQxALhALwHQHsBGArGCAFwApgAdAOwAJqEAnGBZazAB0Y6whjDBIBu1ALwA%2BakID8EjESwBlIvQCWlAOYkAlBjBsANstIByADRHN1FgG0AuidYYG9BAE8SmMEtUbNvjBAQiaBJbTSoAX00QExABBD0AV14UKxBgcJA7WJh6MGUsShQQABYMUoAmaJBlMAAtLAATAFlVZRQAM3iwGHCgA)"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "pnpm",
+          "test",
+          "packages/zod/src/v4/classic/tests/catch.test.ts",
+          "packages/zod/src/v4/classic/tests/partial.test.ts",
+          "packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "pnpm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "packages/zod/src/v4/classic/tests/catch.test.ts"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "pnpm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "corepack",
+          "enable"
+        ]
+      },
+      {
+        "name": "setup 2",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "pnpm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 15,
+    "pr_merged_at": "2026-05-03T21:38:02Z",
+    "merge_commit_sha": "1cab69383fcdeae2a366d5e2a2fc4d8fc765d168",
+    "files_changed": [
+      "packages/zod/src/v4/classic/tests/catch.test.ts",
+      "packages/zod/src/v4/classic/tests/partial.test.ts",
+      "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+      "packages/zod/src/v4/core/schemas.ts"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/catch.test.ts, packages/zod/src/v4/classic/tests/partial.test.ts, packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+  }
+}

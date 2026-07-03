@@ -1,0 +1,27 @@
+﻿{
+  "strong_command": [
+    "codex",
+    "exec",
+    "-m",
+    "gpt-5.5",
+    "-s",
+    "workspace-write",
+    "-C",
+    "{repo}",
+    "-o",
+    "{output}"
+  ],
+  "apprentice_command": [
+    "codex",
+    "exec",
+    "-m",
+    "gpt-5.3-codex-spark",
+    "-s",
+    "workspace-write",
+    "-C",
+    "{repo}",
+    "-o",
+    "{output}"
+  ],
+  "python": "python"
+}

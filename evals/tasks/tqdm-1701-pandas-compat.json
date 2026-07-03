@@ -1,0 +1,102 @@
+{
+  "id": "tqdm-1701-pandas-compat",
+  "language": "Python",
+  "repo": {
+    "url": "https://github.com/tqdm/tqdm.git",
+    "base_ref": "14d72e2c18ba34363d629a43794a47513a9aa368^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/tqdm/tqdm.git <workdir>",
+      "git checkout 14d72e2c18ba34363d629a43794a47513a9aa368^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/tqdm/tqdm/issues/1701",
+    "fix_pr_url": "https://github.com/tqdm/tqdm/pull/1703",
+    "close_date": "2026-01-30",
+    "fix_diff_lines": 53,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Pandas 3.0.0 breaks progress_apply with pd.Series",
+    "body": "There seems to be a breaking change in Pandas `3.0.0` on how the internals of Series work, and the pandas integration raises an exception.\n\nHow to reproduce:\n```\nimport tqdm\ntqdm.tqdm.pandas()\n\ns = pd.Series([1, 2, 3, 4, 5])\n\ns = s.progress_apply(lambda x: x * 2)\n```\n\nThe following code snippet raises this error:\n```\n---------------------------------------------------------------------------\nImportError                               Traceback (most recent call last)\nFile c:\\Data\\T\\.venv\\Lib\\site-packages\\tqdm\\std.py:897, in tqdm.pandas.<locals>.inner_generator.<locals>.inner(df, func, *args, **kwargs)\n    896 try:  # pandas>=1.3.0\n--> 897     from pandas.core.common import is_builtin_func\n    898 except ImportError:\n\nImportError: cannot import name 'is_builtin_func' from 'pandas.core.common' (c:\\Data\\Realit\\realit-file-renamer\\.venv\\Lib\\site-packages\\pandas\\core\\common.py)\n\nDuring handling of the above exception, another exception occurred:\n\nAttributeError                            Traceback (most recent call last)\n~\\AppData\\Local\\Temp\\ipykernel_14044\\1174839030.py in ?()\n      7 tqdm.tqdm.pandas()\n      8 \n      9 s = pd.Series([1, 2, 3, 4, 5])\n     10 \n---> 11 s = s.progress_apply(lambda x: x * 2)\n\nc:\\Data\\T\\.venv\\Lib\\site-packages\\tqdm\\std.py in ?(df, func, *args, **kwargs)\n    895 \n    896                 try:  # pandas>=1.3.0\n    897                     from pandas.core.common import is_builtin_func\n    898                 except ImportError:\n--> 899                     is_builtin_func = df._is_builtin_func\n    900                 try:\n    901                     func = is_builtin_func(func)\n    902                 except TypeError:\n\nc:\\Data\\T\\.venv\\Lib\\site-packages\\pandas\\core\\generic.py in ?(self, name)\n   6202             and name not in self._accessors\n   6203             and self._info_axis._can_hold_identifiers_and_holds_name(name)\n   6204         ):\n   6205             return self[name]\n-> 6206         return object.__getattribute__(self, name)\n\nAttributeError: 'Series' object has no attribute '_is_builtin_func'\n```\n\nMy platform configuration, and versions:\n```\ntqdm version: 4.67.1\nPython version: 3.12.9 (main, Feb 12 2025, 14:52:31) [MSC v.1942 64 bit (AMD64)]\nPlatform: win32\nPandas version: 3.0.0\n```\n"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests/tests_pandas.py",
+          "tests/tests_tqdm.py"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "tests"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "pyproject.toml",
+      "tests/tests_pandas.py"
+    ],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": [
+          "python",
+          "--version"
+        ]
+      },
+      {
+        "name": "pytest available",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          ".[dev]"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "python",
+      "pytest"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 6,
+    "pr_merged_at": "2026-01-30T16:27:36Z",
+    "merge_commit_sha": "14d72e2c18ba34363d629a43794a47513a9aa368",
+    "files_changed": [
+      "tests/tests_pandas.py",
+      "tests/tests_tqdm.py",
+      "tqdm/std.py"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): tests/tests_pandas.py, tests/tests_tqdm.py"
+  }
+}

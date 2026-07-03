@@ -1,0 +1,9 @@
+{
+  "cheap_command": [
+    "{python}",
+    "{evals}/mock-codex.py",
+    "-o",
+    "{output}"
+  ],
+  "mentor_loop_config": "__mock__"
+}

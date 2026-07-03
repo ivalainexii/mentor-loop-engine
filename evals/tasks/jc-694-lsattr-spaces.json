@@ -1,0 +1,101 @@
+{
+  "id": "jc-694-lsattr-spaces",
+  "language": "Python",
+  "repo": {
+    "url": "https://github.com/kellyjonbrazil/jc.git",
+    "base_ref": "e009338ad15518dc04f6a9a69dbb9cce99c2ce85^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/kellyjonbrazil/jc.git <workdir>",
+      "git checkout e009338ad15518dc04f6a9a69dbb9cce99c2ce85^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/kellyjonbrazil/jc/issues/694",
+    "fix_pr_url": "https://github.com/kellyjonbrazil/jc/pull/697",
+    "close_date": "2026-04-17",
+    "fix_diff_lines": 23,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "lsattr parser fails with filenames containing spaces or newlines",
+    "body": "the parser for lsattr fails on filenames with spaces or newlines (and probably other control characters):\n```\n λ ls\n╭───┬─────────────────────────────────────────┬──────┬──────┬───────────────╮\n│ # │                  name                   │ type │ size │   modified    │\n├───┼─────────────────────────────────────────┼──────┼──────┼───────────────┤\n│ 0 │ \\u{a}--------------e------- test        │ file │  0 B │ 7 hours ago   │\n│ 1 │ \\u{a}test                               │ file │  0 B │ 6 minutes ago │\n│ 2 │ file\\u{a}--------------e------- tempdir │ file │  0 B │ 7 hours ago   │\n│ 3 │ ok ok ok ok ok                          │ file │  0 B │ now           │\n│ 4 │ test                                    │ file │  0 B │ 7 hours ago   │\n│ 5 │ test2                                   │ file │  0 B │ 7 hours ago   │\n│ 6 │ test23                                  │ file │  0 B │ 7 hours ago   │\n╰───┴─────────────────────────────────────────┴──────┴──────┴───────────────╯\n```\n```\n λ lsattr\n--------------e------- ./ok ok ok ok ok\n--------------e------- ./test\n--------------e------- ./test23\n--------------e------- ./\n--------------e------- test\n--------------e------- ./test2\n--------------e------- ./\ntest\n--------------e------- ./file\n--------------e------- tempdir\n```\n```\n λ jc -d lsattr\nError: nu::shell::error\n\n  × jc exection failed\n   ╭─[repl_entry #89:1:4]\n 1 │ jc -d lsattr\n   ·    ────┬────\n   ·        ╰─┤ Traceback (most recent call last):\n   ·          │   File \"/usr/bin/jc\", line 8, in <module>\n   ·          │     sys.exit(main())\n   ·          │              ~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 970, in main\n   ·          │     JcCli().run()\n   ·          │     ~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 952, in run\n   ·          │     self._run()\n   ·          │     ~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 916, in _run\n   ·          │     self.standard_parse_and_print()\n   ·          │     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 808, in standard_parse_and_print\n   ·          │     self.create_normal_output()\n   ·          │     ~~~~~~~~~~~~~~~~~~~~~~~~~^^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/cli.py\", line 760, in create_normal_output\n   ·          │     self.data_out = self.parser_module.parse(\n   ·          │                     ~~~~~~~~~~~~~~~~~~~~~~~~^\n   ·          │         self.data_in,\n   ·          │         ^^^^^^^^^^^^^\n   ·          │         raw=self.raw,\n   ·          │         ^^^^^^^^^^^^^\n   ·          │         quiet=self.quiet\n   ·          │         ^^^^^^^^^^^^^^^^\n   ·          │     )\n   ·          │     ^\n   ·          │   File \"/usr/lib/python3.14/site-packages/jc/parsers/lsattr.py\", line 152, in parse\n   ·          │     attributes, file = line.split()\n   ·          │     ^^^^^^^^^^^^^^^^\n   ·          │ ValueError: too many values to unpack (expected 2, got 6)\n   ╰────\n\n```"
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "python",
+          "-m",
+          "unittest",
+          "tests.test_lsattr"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "python",
+          "-m",
+          "unittest"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "setup.py",
+      "tests/test_lsattr.py"
+    ],
+    "preflight_commands": [
+      {
+        "name": "python available",
+        "command": [
+          "python",
+          "--version"
+        ]
+      },
+      {
+        "name": "pytest available",
+        "command": [
+          "python",
+          "-m",
+          "pytest",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "python",
+          "-m",
+          "pip",
+          "install",
+          "-e",
+          "."
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "python",
+      "pytest"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 1,
+    "pr_merged_at": "2026-04-17T17:58:48Z",
+    "merge_commit_sha": "e009338ad15518dc04f6a9a69dbb9cce99c2ce85",
+    "files_changed": [
+      "jc/parsers/lsattr.py",
+      "tests/fixtures/ubuntu-20.04/lsattr-spaces.json",
+      "tests/fixtures/ubuntu-20.04/lsattr-spaces.out",
+      "tests/test_lsattr.py"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): tests/fixtures/ubuntu-20.04/lsattr-spaces.json, tests/fixtures/ubuntu-20.04/lsattr-spaces.out, tests/test_lsattr.py"
+  }
+}

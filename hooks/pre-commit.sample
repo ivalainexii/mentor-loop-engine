@@ -1,0 +1,45 @@
+#!/bin/sh
+set -eu
+
+# Mentor Loop sample pre-commit hook.
+#
+# Copy to .git/hooks/pre-commit and make it executable.
+#
+# Optional environment variables:
+# - MENTOR_LOOP_DIR: path to the mentor-loop folder, default "mentor-loop"
+# - MENTOR_BRIEF: path to the active Mentor Brief, default "mentor-brief.md"
+# - PYTHON: Python executable, default "python"
+
+repo_root="$(git rev-parse --show-toplevel)"
+mentor_loop_dir="${MENTOR_LOOP_DIR:-mentor-loop}"
+mentor_loop_path="$repo_root/$mentor_loop_dir"
+python_bin="${PYTHON:-python}"
+brief_path="${MENTOR_BRIEF:-mentor-brief.md}"
+
+run_gate() {
+  name="$1"
+  shift
+  echo "mentor-loop: running $name"
+  "$@"
+}
+
+if [ ! -d "$mentor_loop_path/gates" ]; then
+  echo "mentor-loop: gates not found at $mentor_loop_path/gates"
+  echo "mentor-loop: set MENTOR_LOOP_DIR or install the mentor-loop folder"
+  exit 1
+fi
+
+if [ -f "$repo_root/$brief_path" ]; then
+  run_gate "blast-radius" \
+    "$python_bin" "$mentor_loop_path/gates/blast-radius-check.py" \
+    --brief "$repo_root/$brief_path"
+else
+  echo "mentor-loop: no Mentor Brief found at $repo_root/$brief_path"
+  echo "mentor-loop: skipping blast-radius gate; set MENTOR_BRIEF to enforce it"
+fi
+
+if [ -f "$mentor_loop_path/gates/runtime-floor-check.py" ]; then
+  run_gate "runtime-floor" \
+    "$python_bin" "$mentor_loop_path/gates/runtime-floor-check.py" \
+    --root "$repo_root"
+fi

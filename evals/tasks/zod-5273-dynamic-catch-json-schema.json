@@ -1,0 +1,100 @@
+{
+  "id": "zod-5273-dynamic-catch-json-schema",
+  "language": "JavaScript/TypeScript",
+  "repo": {
+    "url": "https://github.com/colinhacks/zod.git",
+    "base_ref": "fbe8ad1b709460fc45d88fdcb5eca591198de60d^1",
+    "checkout_commands": [
+      "git -c core.autocrlf=false clone --config core.autocrlf=false https://github.com/colinhacks/zod.git <workdir>",
+      "git checkout fbe8ad1b709460fc45d88fdcb5eca591198de60d^1"
+    ]
+  },
+  "ground_truth": {
+    "issue_url": "https://github.com/colinhacks/zod/issues/5273",
+    "fix_pr_url": "https://github.com/colinhacks/zod/pull/5925",
+    "close_date": "2026-05-04",
+    "fix_diff_lines": 11,
+    "training_cutoff_relation": "closed after 2025-09-01 collector cutoff; exact cheap-model training cutoff unknown"
+  },
+  "issue": {
+    "title": "Workaround for \"Dynamic catch values are not supported in JSON Schema\"",
+    "body": "When using `z.toJSONSchema`, I noticed that `.catch((ctx) => somethingCustom(ctx))` was causing a crash. There was not much info on this edge case in docs and discussions, so I decided to create this issue just in case.\n\nRelevant source:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L561-L573\n\nRelevant test:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/classic/tests/to-json-schema.test.ts#L281-L284\n\n`z.toJSONSchema` supports `unrepresentable: \"any\"` which could potentially used for dynamic catch, similarly to how it's done for `transform()` and others:\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L521-L526\n\nhttps://github.com/colinhacks/zod/blob/62bf4e439e287e55c843245b49f8d34b1ad024ee/packages/zod/src/v4/core/to-json-schema.ts#L617-L628\n\nIt'd be also great if https://zod.dev/json-schema was updated to reflect the caveat of dynamic catch.\n\nHappy to help with a PR if the above makes sense.\n\n---\n\nIn the meantime, I [patched](https://pnpm.io/cli/patch) the logic locally like this:\n\n```diff\n} catch {\n-   throw new Error(\"Dynamic catch values are not supported in JSON Schema\");\n+   // Assume that catch does not change the type of the schema\n+   // Context: https://github.com/colinhacks/zod/issues/5273\n+   break;\n}\n```\n\nIt's more like `unrepresentable: \"passthrough\"` (which does not exist yet) rather than `unrepresentable: \"any\"`."
+  },
+  "verification": {
+    "focused": [
+      {
+        "name": "focused verification",
+        "command": [
+          "pnpm",
+          "test",
+          "packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+        ]
+      }
+    ],
+    "regression": [
+      {
+        "name": "regression verification",
+        "command": [
+          "pnpm",
+          "test"
+        ]
+      }
+    ]
+  },
+  "env": {
+    "required_files": [
+      "package.json",
+      "pnpm-lock.yaml",
+      "packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+    ],
+    "preflight_commands": [
+      {
+        "name": "node available",
+        "command": [
+          "node",
+          "--version"
+        ]
+      },
+      {
+        "name": "package manager available",
+        "command": [
+          "pnpm",
+          "--version"
+        ]
+      }
+    ],
+    "setup_commands": [
+      {
+        "name": "setup 1",
+        "command": [
+          "corepack",
+          "enable"
+        ]
+      },
+      {
+        "name": "setup 2",
+        "command": [
+          "pnpm",
+          "install",
+          "--frozen-lockfile"
+        ]
+      }
+    ],
+    "required_deps": [
+      "git",
+      "node",
+      "pnpm"
+    ]
+  },
+  "candidate_source": {
+    "candidates_json_index": 14,
+    "pr_merged_at": "2026-05-04T16:52:41Z",
+    "merge_commit_sha": "fbe8ad1b709460fc45d88fdcb5eca591198de60d",
+    "files_changed": [
+      "packages/zod/src/v4/classic/tests/to-json-schema.test.ts",
+      "packages/zod/src/v4/core/json-schema-processors.ts"
+    ],
+    "touches_test_file": true,
+    "verification_hint": "Prefer focused verification from touched test file(s): packages/zod/src/v4/classic/tests/to-json-schema.test.ts"
+  }
+}

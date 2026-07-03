@@ -1,0 +1,15 @@
+{
+  "strong_command": [
+    "python",
+    "{repo}/../evals/mock-codex.py",
+    "-o",
+    "{output}"
+  ],
+  "apprentice_command": [
+    "python",
+    "{repo}/../evals/mock-codex.py",
+    "-o",
+    "{output}"
+  ],
+  "python": "python"
+}

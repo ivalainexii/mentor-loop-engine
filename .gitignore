@@ -1,0 +1,14 @@
+# Runtime artifacts (regenerated per run; never part of the product)
+.mentor-loop/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local tooling scratch
+.surgical-fix/
+
+# Editor / OS
+.DS_Store
+Thumbs.db

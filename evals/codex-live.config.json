@@ -1,0 +1,15 @@
+﻿{
+  "cheap_command": [
+    "codex",
+    "exec",
+    "-m",
+    "gpt-5.3-codex-spark",
+    "-s",
+    "workspace-write",
+    "-C",
+    "{repo}",
+    "-o",
+    "{output}"
+  ],
+  "mentor_loop_config": "{package}/mentor-loop.config.json"
+}

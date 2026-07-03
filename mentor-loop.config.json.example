@@ -1,0 +1,9 @@
+{
+  "strong_command":     ["codex", "exec", "-m", "<strong-model>", "-s", "workspace-write", "-C", "{repo}", "-o", "{output}"],
+  "apprentice_command": ["codex", "exec", "-m", "<cheap-model>",  "-s", "workspace-write", "-C", "{repo}", "-o", "{output}"],
+  "python": "python",
+
+  "_note": "The three keys above are the required, shipped config. The two keys below are OPTIONAL extras and are intentionally prefixed with '_optional_' so this example is inert by default. Rename '_optional_advisor_command' -> 'advisor_command' to enable the cross-vendor advisory brief-review, and '_optional_architect_command' -> 'architect_command' to enable the optional auto-draft of an architect verdict. Both are advisory / fail-closed: if the command cannot run they SKIP and never unlock or block. Pin an explicit model in each command.",
+  "_optional_advisor_command":   ["codex", "exec", "-m", "<cross-vendor-model>", "-s", "read-only", "-C", "{repo}", "-o", "{output}"],
+  "_optional_architect_command": ["codex", "exec", "-m", "<architect-model>",    "-s", "read-only", "-C", "{repo}", "-o", "{output}"]
+}
