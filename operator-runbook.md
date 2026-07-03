@@ -251,6 +251,31 @@ Escalate to strong-direct when:
 
 Escalation cost should be counted when token data is available.
 
+## Optional Engine Automation (advisor / architect commands)
+
+The CLI engine (`tools/mentor-loop.py`) runs the loop above with deterministic gates.
+Two OPTIONAL commands extend it. Both are OFF by default and both are fail-safe: they
+never block a run and never unlock an escalation on their own.
+
+- `advisor_command` — cross-vendor advisory brief-review. Runs a second-vendor model
+  (read-only) over the Mentor Brief plus its change intent and blast-radius file list, and
+  writes findings to a brief appendix. Findings are ADVISORY only: the mentor may adopt or
+  reject each with one line, and the run's pass/fail is unchanged. If the command cannot run
+  (for example a Windows sandbox restriction, or a non-zero exit), the stage SKIPs and the
+  brief is marked "not cross-vendor reviewed" (未经跨厂审). There is no same-vendor fallback.
+
+- `architect_command` — architect verdict auto-draft. For a brief that escalated at the
+  honesty gate, this drafts a verdict for the human to review. It NEVER auto-stamps and NEVER
+  auto-unlocks: a person must read the draft and run the ratify step, which applies the
+  `[architect-ratified: <ref>]` stamp. If the command cannot run, the stage SKIPs and the
+  brief stays BLOCKED.
+
+Both commands are declared ONLY in `mentor-loop.config.json.example`, never in the shipped
+`mentor-loop.config.json`; when a key is absent the stage simply SKIPs. To enable one, copy
+`mentor-loop.config.json.example` to `mentor-loop.config.json` and rename
+`_optional_advisor_command` / `_optional_architect_command` to `advisor_command` /
+`architect_command`. Pin an explicit model in each command.
+
 ## Minimum Publishable Run Record
 
 Every run should leave behind:

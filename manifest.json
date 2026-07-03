@@ -22,6 +22,7 @@
     "gates/env-preflight-check.py",
     "hooks/pre-commit.sample",
     "mentor-loop.config.json",
+    "mentor-loop.config.json.example",
     "mentor-review-template.md",
     "lesson-capture-template.md",
     "lesson-ledger-example.md",
@@ -73,7 +74,11 @@
   ],
   "test": [
     "tests/test_blast_radius_check.py",
-    "tests/test_runtime_floor_check.py"
+    "tests/test_runtime_floor_check.py",
+    "tests/test_review_verification.py",
+    "tests/test_brief_honesty.py",
+    "tests/test_brief_review.py",
+    "tests/test_architect_loop.py"
   ],
   "eval": [
     "evals/README.md",
