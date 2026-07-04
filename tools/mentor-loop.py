@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import hashlib
 import json
 import os
 import re
@@ -1420,11 +1421,419 @@ def stage_report(repo: Path, run_id: str) -> int:
     return 0
 
 
-def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = False, verification_path: str | None = None) -> int:
+# --- ml-v2 BUILD-D: failure-attribution architect loop (.mentor-loop/spec-brief-review-loop.md) ---
+# C escalates on the PRE-exec brief-honesty gate (fail-open guards). D escalates on POST-exec
+# REPEATED failure of the SAME TARGET: repeated failure is often "the task was defined wrong,"
+# not "the apprentice is weak," so D audits the mentor's DIRECTION (goal / assumptions / scope) and
+# NEVER writes code. Constitution §1 五原则⑤; PLAYBOOK 复核回路细则. trigger_source: failure_loop.
+# Fully ADDITIVE + advisory: D never changes a run's own pass/fail verdict.
+
+FAILURE_LOOP_STATE_REL = ".mentor-loop/state/brief-review-loop.json"
+FAILURE_REVIEW_METRIC_REL = ".mentor-loop/state/failure-review-metric.jsonl"
+FAILURE_TRIGGER_N = 2  # PLAYBOOK-pinned threshold: same-target failures, NON-consecutive OK (Codex P2).
+ARCHITECT_VERDICTS = (
+    "revised_brief",
+    "narrowed_task",
+    "route_change",
+    "keep_brief_retry",
+    "brief_sound_capability_gap",
+    "park_report",
+)
+_CODE_FENCE_RE = re.compile(r"```")
+_DIFF_MARKER_RE = re.compile(r"^(?:---[ \t]\S|\+\+\+[ \t]\S|@@[ \t])", re.MULTILINE)
+# file:line edits: a filename with a code/config/markup extension followed by :line. The leading `\b`
+# matches with OR without a path prefix (`app.css:12` and `src/app.css:12` both hit). URL/domain ports
+# (`api.example.com:443`, `https://api.example.com:443`) are NOT flagged because a TLD is not in the
+# whitelist (CV P3 rounds 1-3). Residual: an exotic non-whitelisted extension slips (bounded: the
+# architect is instructed no-code and this path is advisory/opt-in).
+_FILE_LINE_RE = re.compile(
+    r"\b[\w-]+\.(?:py|js|ts|tsx|jsx|mjs|cjs|json|md|txt|java|go|rs|c|cc|cpp|h|hpp|cs|kt|swift|rb|php|"
+    r"sh|ps1|bat|css|scss|sass|less|html?|xml|sql|vue|svelte|ya?ml|toml|cfg|ini|lua|pl|r)\b:\d+"
+)
+
+
+def compute_target_id(task: str) -> str:
+    """Stable target identity (spec ⟢⟡ / Codex P1): derived from the change intent (the task
+    string) ONLY -- never the mutable, mentor-generated brief goal -- so a brief revision does NOT
+    wash the failure count. A plain retry of the same task re-derives the same id (counters
+    accumulate); a narrowed / re-routed successor inherits it via ``run --target <id>``.
+    v0 LIMIT (cross-vendor CV P1-c): the spec's 'task_id + blast-radius' inputs are not available
+    before a run, so identity is the normalized task alone -- two unrelated tasks with identical
+    wording would share counters (advisory-only impact; disambiguate with an explicit --target)."""
+    normalized = " ".join((task or "").split()).strip().lower()
+    return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+
+
+def _new_target_entry(target_id: str, task: str) -> dict[str, object]:
+    return {
+        "target_id": target_id,
+        "task": task,
+        "attempts": 0,
+        "failures": 0,
+        "verification_failures": 0,
+        "brief_revision_count": 0,
+        "audited": False,
+        "history": [],
+        "last": {},
+    }
+
+
+def load_loop_state(repo: Path) -> dict[str, object]:
+    path = repo / FAILURE_LOOP_STATE_REL
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        # Unreadable state must never crash a run. Empty => no false trigger (fail-safe, not fail-open).
+        return {}
+
+
+def save_loop_state(repo: Path, state: dict[str, object]) -> None:
+    path = repo / FAILURE_LOOP_STATE_REL
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_text(path, json.dumps(state, indent=2, ensure_ascii=False) + "\n")
+
+
+def loop_state_corrupt(repo: Path) -> bool:
+    """True iff the state file EXISTS but does not parse to a JSON object (cross-vendor CV P1). A
+    MISSING file is NOT corrupt (a legit first run). Callers fail-closed on corruption instead of
+    silently resetting the failure count."""
+    path = repo / FAILURE_LOOP_STATE_REL
+    if not path.exists():
+        return False
+    try:
+        return not isinstance(json.loads(path.read_text(encoding="utf-8-sig")), dict)
+    except Exception:
+        return True
+
+
+def _quarantine_corrupt_state(repo: Path) -> Path:
+    """Preserve a corrupt state file (rename to *.corrupt) so evidence is never destroyed and the
+    failure count is never silently reset. Returns the backup path (best-effort)."""
+    path = repo / FAILURE_LOOP_STATE_REL
+    backup = path.with_name(path.name + ".corrupt")
+    try:
+        if backup.exists():
+            backup.unlink()
+        path.rename(backup)
+    except Exception:
+        backup = path
+    return backup
+
+
+def _persist_entry(repo: Path, entry: dict[str, object]) -> None:
+    state = load_loop_state(repo)
+    state[str(entry["target_id"])] = entry
+    save_loop_state(repo, state)
+
+
+def update_loop_state(repo: Path, target_id: str, task: str, signals: dict[str, object]) -> dict[str, object]:
+    """Record one attempt's outcome under ``target_id`` (PERSISTED -- the engine is a CLI, so
+    in-memory counters die per run, Codex P1). ``signals`` = {run_id, failed, verification_failed,
+    brief_blocker, review_reason, brief_revised}. Returns the updated entry."""
+    state = load_loop_state(repo)
+    raw = state.get(target_id)
+    entry = raw if isinstance(raw, dict) else _new_target_entry(target_id, task)
+    entry["attempts"] = int(entry.get("attempts", 0)) + 1
+    if signals.get("failed"):
+        entry["failures"] = int(entry.get("failures", 0)) + 1
+    if signals.get("verification_failed"):
+        entry["verification_failures"] = int(entry.get("verification_failures", 0)) + 1
+    if signals.get("brief_revised"):
+        entry["brief_revision_count"] = int(entry.get("brief_revision_count", 0)) + 1
+    record = {
+        "run_id": signals.get("run_id"),
+        "failed": bool(signals.get("failed")),
+        "verification_failed": bool(signals.get("verification_failed")),
+        "brief_blocker": bool(signals.get("brief_blocker")),
+        "brief_blocker_reason": signals.get("brief_blocker_reason") or "",
+        "review_reason": signals.get("review_reason"),
+    }
+    entry["history"] = (list(entry.get("history", [])) + [record])[-20:]
+    entry["last"] = record
+    state[target_id] = entry
+    save_loop_state(repo, state)
+    return entry
+
+
+def failure_triggers(entry: dict[str, object]) -> list[str]:
+    """Which repeated-failure triggers fired for this target (pure). All same-target; thresholds
+    are NON-consecutive accumulations (Codex P2). N is PLAYBOOK-pinned (FAILURE_TRIGGER_N)."""
+    fired: list[str] = []
+    if int(entry.get("failures", 0)) >= FAILURE_TRIGGER_N:
+        fired.append(f"failures>={FAILURE_TRIGGER_N}")
+    if int(entry.get("verification_failures", 0)) >= FAILURE_TRIGGER_N:
+        fired.append(f"verification_failures>={FAILURE_TRIGGER_N}")
+    last = entry.get("last") or {}
+    if isinstance(last, dict):
+        if last.get("brief_blocker"):
+            fired.append("brief_blocker")
+        if last.get("review_reason") == "direction_unclear":
+            fired.append("review:direction_unclear")
+        if int(entry.get("brief_revision_count", 0)) >= 1 and last.get("failed"):
+            fired.append("revised_brief_still_failing")
+    return fired
+
+
+def classify_review_reason(review: str) -> str:
+    """Map a review verdict to a reason-code (pure), keyed on the review's own vocabulary
+    (Approved / Needs fixes / Stop and re-plan). 'Stop and re-plan' => direction_unclear."""
+    low = (review or "").lower()
+    if "stop and re-plan" in low:
+        return "direction_unclear"
+    if "needs fixes" in low:
+        return "needs_fixes"
+    if "approved" in low:
+        return "approved"
+    return "other"
+
+
+def detect_brief_blocker(apprentice_log: str) -> tuple[bool, str]:
+    """Structured brief_blocker detection (cross-vendor CV P2): the apprentice signals an unworkable
+    brief with a LINE that starts with ``brief_blocker: <reason>`` -- NOT a substring anywhere, so
+    'No brief_blocker: it was clear' does NOT false-trigger a park. Returns (found, reason)."""
+    for line in (apprentice_log or "").splitlines():
+        stripped = line.strip().lstrip("-*#>").strip()
+        if stripped.lower().startswith("brief_blocker:"):
+            return True, stripped.split(":", 1)[1].strip()
+    return False, ""
+
+
+def lint_architect_output(text: str) -> list[str]:
+    """No-code enforcement (spec Fable red-flag b + Codex P2). Detect EXPLICIT code in the
+    architect's DIRECTION verdict: fenced blocks, unified-diff markers, file:line edits. A hit
+    means the verdict tried to WRITE code -- the caller REJECTS + parks the whole verdict, NEVER
+    strips (stripping could launder a code verdict into an 'executable' one; DEC-003)."""
+    findings: list[str] = []
+    if _CODE_FENCE_RE.search(text or ""):
+        findings.append("fenced_code_block")
+    if _DIFF_MARKER_RE.search(text or ""):
+        findings.append("unified_diff_marker")
+    if _FILE_LINE_RE.search(text or ""):
+        findings.append("file_line_edit")
+    return findings
+
+
+def parse_architect_verdict(text: str) -> str | None:
+    """Extract the single legal verdict enum value the architect chose (pure). Scans EVERY
+    ``verdict: <enum>`` line; returns the enum only if exactly ONE distinct legal verdict is present.
+    Zero legal verdicts, or multiple DISTINCT ones (ambiguous schema), returns None => park for a
+    clean re-verdict (cross-vendor CV P2). Case-insensitive; tolerant of a leading list marker."""
+    found: list[str] = []
+    for line in (text or "").splitlines():
+        low = line.strip().lstrip("-*").strip().lower()
+        if low.startswith("verdict:"):
+            value = low.split(":", 1)[1].strip()
+            token = (value.split()[0] if value else "").strip("`.,")
+            if token in ARCHITECT_VERDICTS:
+                found.append(token)
+    distinct = set(found)
+    return found[0] if len(distinct) == 1 else None
+
+
+def _indent(text: str) -> str:
+    return "\n".join("    " + line for line in (text or "").splitlines())
+
+
+def _append_metric(path: Path, run_id: str, target_id: str, fired: list[str], outcome: str) -> None:
+    """Append one line to the SEPARATE failure-review metric series (like the B.2 CV log; NOT the
+    apprentice correction-rate). Keeps 'brief = top defect source' falsifiable, not presupposed."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "run_id": run_id,
+        "target_id": target_id,
+        "trigger_source": "failure_loop",
+        "triggers": fired,
+        "outcome": outcome,
+    }
+    append_text(path, json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def build_failure_packet(
+    target_id: str,
+    entry: dict[str, object],
+    task: str,
+    brief: str,
+    blast_radius: str,
+    precedents: str,
+) -> str:
+    """Assemble the failure-attribution architect packet (pure; sibling of build_architect_packet).
+    Carries the repeated-failure history + the CURRENT mentor brief (the object being audited, CV P2)
+    + the 5 DIRECTION questions + the CONSTRAINED verdict enum + the no-code rule. The architect
+    audits DIRECTION; it never writes code."""
+    hist = entry.get("history") or []
+    hist_lines = "\n".join(
+        f"- attempt {i + 1}: run={h.get('run_id', '?')} failed={h.get('failed')} "
+        f"verification_failed={h.get('verification_failed')} review_reason={h.get('review_reason')} "
+        f"brief_blocker={h.get('brief_blocker')}"
+        + (f" reason={h.get('brief_blocker_reason')!r}" if h.get("brief_blocker_reason") else "")
+        for i, h in enumerate(hist)
+        if isinstance(h, dict)
+    ) or "- (no per-attempt history recorded)"
+    verdict_enum = "\n".join(f"  - `{v}`" for v in ARCHITECT_VERDICTS)
+    return "\n".join(
+        [
+            f"# Failure-review packet — target {target_id} (ml-v2 BUILD-D, trigger_source: failure_loop)",
+            "",
+            "- assembled_by: maybe_run_failure_review (deterministic; POST-execution)",
+            "- rule: FAIL-CLOSED. You AUDIT THE MENTOR'S DIRECTION (goal / assumptions / scope).",
+            "  You do NOT solve the bug and you do NOT write code. A verdict containing code, a diff,",
+            "  or a file:line edit is REJECTED WHOLE (never stripped) and the loop parks for the owner.",
+            "",
+            "## 1. Why you were called",
+            f"- The same target has repeatedly FAILED (attempts={entry.get('attempts')}, "
+            f"failures={entry.get('failures')}, verification_failures={entry.get('verification_failures')}).",
+            '- Repeated failure is often "the task was defined wrong," not "the apprentice is weak."',
+            "",
+            "## 2. Failure history",
+            hist_lines,
+            "",
+            "## 3. The change intent (task) the mentor is briefing against",
+            "```",
+            (task or "").strip(),
+            "```",
+            "",
+            "## 3b. The current mentor brief (THIS is what you audit — goal / assumptions / scope)",
+            (brief or "").strip() or "(no brief artifact)",
+            "",
+            "## 4. Blast radius (from the run's gate artifact)",
+            (blast_radius or "").strip() or "(none)",
+            "",
+            "## 5. Applicable precedents / guardrails (.mentor-loop/decisions.md)",
+            (precedents or "").strip() or "(none)",
+            "",
+            "## 6. The five DIRECTION questions",
+            "1. Is the mentor's GOAL definition right?",
+            "2. Is the BLAST RADIUS missing anything?",
+            "3. Are the ASSUMPTIONS wrong?",
+            "4. Is what the apprentice was asked TOO BIG / TOO ABSTRACT?",
+            "5. Continue / break smaller / change route / park & ask owner?",
+            "",
+            "## 7. Your verdict — CONSTRAINED (no patch field)",
+            "Answer with exactly one line `verdict: <one of>` from this enum, then a short rationale:",
+            verdict_enum,
+            "",
+            "  - `revised_brief` — a reworked brief in WORDS only; it RE-FLOWS through the honesty gate.",
+            "  - `brief_sound_capability_gap` — the brief has NO defect; the gap is execution capability",
+            "    (recommend upgrading the apprentice model / changing channel / parking).",
+            "The mentor RECORDS your verdict; it is NEVER auto-applied. Do not write code.",
+            "",
+        ]
+    )
+
+
+def maybe_run_failure_review(
+    repo: Path,
+    run_dir: Path,
+    run_id: str,
+    task: str,
+    target_id: str,
+    signals: dict[str, object],
+    config: dict[str, object] | None,
+) -> str:
+    """BUILD-D orchestration (advisory-of-direction; NEVER changes the run's own verdict). Records
+    this attempt under ``target_id``, checks the repeated-failure triggers, and on a FRESH
+    (un-audited) trigger routes a FAILURE packet to a CONSTRAINED architect brief-review. Fail-closed:
+    no architect_command, a code-laundering verdict, an illegal verdict, or a re-failing already-audited
+    target => PARK & ask owner. One audit attempt per target (owner-only reset). Returns a status."""
+    metric_path = repo / FAILURE_REVIEW_METRIC_REL
+
+    # P1 (cross-vendor CV): a corrupt/unreadable state file must NOT silently reset the failure count
+    # (that would launder it + violate owner-only reset). Preserve the evidence and PARK for the owner.
+    if loop_state_corrupt(repo):
+        backup = _quarantine_corrupt_state(repo)
+        reason = f"loop state corrupt/unreadable; preserved at {backup.name}; owner must inspect (counters NOT auto-reset)"
+        write_text(
+            run_dir / "failure-review-park.md",
+            f"# BUILD-D failure-review PARK — {run_id} (target {target_id})\n"
+            f"- trigger_source: failure_loop\n- reason: {reason}\n",
+        )
+        _append_metric(metric_path, run_id, target_id, ["state_corrupt"], f"park:{reason}")
+        return stage_summary("failure-review", "PARK", reason)
+
+    entry = update_loop_state(repo, target_id, task, signals)
+    fired = failure_triggers(entry)
+    # P1 (cross-vendor CV): triggers 3/4 (brief_blocker, review:direction_unclear) are THIS-run signals
+    # and fire regardless of exit code; the accumulation triggers only escalate when THIS run actually
+    # failed, so a later PASSING run can't re-open an accumulated-failure trigger.
+    if not signals.get("failed"):
+        fired = [t for t in fired if t in ("brief_blocker", "review:direction_unclear")]
+    if not fired:
+        return stage_summary("failure-review", "OK", f"no active trigger (target {target_id})")
+
+    def _park(reason: str, verdict_text: str = "") -> str:
+        lines = [
+            f"# BUILD-D failure-review PARK — {run_id} (target {target_id})",
+            "- trigger_source: failure_loop",
+            f"- reason: {reason}",
+            f"- triggers: {', '.join(fired)}",
+            f"- attempts={entry['attempts']} failures={entry['failures']} "
+            f"verification_failures={entry['verification_failures']}",
+        ]
+        if verdict_text:
+            lines += ["- architect verdict (REJECTED / for owner context, verbatim):", _indent(verdict_text)]
+            # Persist even a REJECTED/ambiguous verdict so a later already-audited re-fail can attach it (CV P2).
+            entry["verdict_excerpt"] = verdict_text[:1000]
+            _persist_entry(repo, entry)
+        write_text(run_dir / "failure-review-park.md", "\n".join(lines) + "\n")
+        _append_metric(metric_path, run_id, target_id, fired, f"park:{reason}")
+        return stage_summary("failure-review", "PARK", reason)
+
+    # Cost guard: at most ONE audit per target; a re-failing audited target -> owner (fail-closed),
+    # WITH the prior architect verdict attached for owner context (cross-vendor CV P2).
+    if entry.get("audited"):
+        return _park(
+            "target already audited once and still failing -> owner ruling needed",
+            str(entry.get("verdict_excerpt", "")),
+        )
+
+    # This IS the one audit attempt for this target; mark it now, regardless of the outcome below.
+    entry["audited"] = True
+    _persist_entry(repo, entry)
+
+    architect_command = config.get("architect_command") if config else None
+    if not architect_command:
+        return _park("no architect_command configured (fail-closed: absent architect => park)")
+
+    blast_radius = (
+        read_text(run_dir / "gate-blast-radius.txt")
+        if (run_dir / "gate-blast-radius.txt").exists()
+        else "(no blast-radius artifact)"
+    )
+    brief = read_text(run_dir / "mentor-brief.md") if (run_dir / "mentor-brief.md").exists() else "(no brief artifact)"
+    packet = build_failure_packet(target_id, entry, task, brief, blast_radius, load_precedents(repo))
+    write_text(run_dir / "failure-review-packet.md", packet)
+    draft_path = run_dir / "failure-review-verdict-draft.md"
+    code = run_codex(
+        architect_command, repo, draft_path, packet, run_dir / "failure-review-codex.log", sandbox="read-only"
+    )
+    if code != 0 or not draft_path.exists():
+        return _park(f"architect_command could not run (exit={code})")
+    verdict_text = read_text(draft_path)
+    lint = lint_architect_output(verdict_text)
+    if lint:
+        return _park(f"architect verdict contained code ({', '.join(lint)}); REJECTED not stripped (DEC-003)", verdict_text)
+    verdict = parse_architect_verdict(verdict_text)
+    if verdict is None:
+        return _park("architect verdict names no legal enum value; clean re-verdict needed", verdict_text)
+    write_text(run_dir / "failure-review-verdict.md", verdict_text)
+    entry["verdict"] = verdict
+    entry["verdict_excerpt"] = verdict_text[:1000]  # persisted so an already-audited re-fail can attach it (CV P2)
+    _persist_entry(repo, entry)
+    _append_metric(metric_path, run_id, target_id, fired, f"verdict:{verdict}")
+    return stage_summary(
+        "failure-review", "OK", f"architect direction verdict={verdict}; recorded, NEVER auto-applied (target {target_id})"
+    )
+
+
+def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = False, verification_path: str | None = None, target: str | None = None) -> int:
     run_id = "unknown"
     run_dir = repo / ".mentor-loop" / "runs" / run_id
     try:
         run_id, run_dir, _active_lessons = init_run(repo, task)
+        target_id = target or compute_target_id(task)  # BUILD-D: stable per-target identity
         if dry_run:
             write_text(run_dir / "mentor-brief.md", "(dry run: brief not generated)\n")
             final = write_dry_run_report(run_dir, run_id)
@@ -1512,7 +1921,26 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
         final = assemble_final_report(ensure_git_repo(repo), run_id).replace("- review_exit_code: session-written", f"- review_exit_code: {review_code}")
         write_text(run_dir / "final-report.md", final)
         print(final)
-        return 0 if apprentice_code == 0 and gates_code == 0 and review_code == 0 else 1
+        result = 0 if apprentice_code == 0 and gates_code == 0 and review_code == 0 else 1
+        # ml-v2 BUILD-D: post-exec failure-attribution loop. ADDITIVE — never alters `result`;
+        # any error here is swallowed so D can never break the run's own verdict.
+        try:
+            brief_blocked, brief_blocker_reason = detect_brief_blocker(apprentice_log)
+            signals = {
+                "run_id": run_id,
+                "failed": result != 0,
+                "verification_failed": bool(verification_results) and "status: FAIL" in verification_results,
+                "brief_blocker": brief_blocked,
+                "brief_blocker_reason": brief_blocker_reason,
+                "review_reason": classify_review_reason(review),
+                # v0 LIMIT (CV P2-b): trigger 5 dormant; "revised brief still fails" is subsumed by
+                # the audited-target re-fail PARK, so brief_revised is not auto-wired in v0.
+                "brief_revised": False,
+            }
+            print(maybe_run_failure_review(repo, run_dir, run_id, task, target_id, signals, config))
+        except Exception as d_exc:  # noqa: BLE001 -- D is advisory; must not touch the run verdict
+            append_text(run_dir / "failure-review.log", f"failure-review error (non-fatal): {d_exc}\n")
+        return result
     except Exception as exc:
         final = f"# Mentor Loop Final Report\n\n- run_id: {run_id}\n- status: failed\n- error: {exc}\n"
         write_text(run_dir / "final-report.md", final)
@@ -1530,6 +1958,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--config", default=str(PACKAGE_ROOT / "mentor-loop.config.json"))
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--verification", default=None, help="JSON spec of focused/regression commands to run before the review")
+    run_parser.add_argument("--target", default=None, help="BUILD-D: stable target_id to inherit (a narrowed/re-routed successor passes the parent's frozen id; omit to derive from the task)")
 
     init_parser = subparsers.add_parser("init", help="Create a run directory and prompt artifacts")
     init_parser.add_argument("task", nargs="+")
@@ -1567,7 +1996,7 @@ def parse_legacy(argv: list[str]) -> argparse.Namespace:
 
 def first_positional(argv: list[str]) -> str | None:
     skip_next = False
-    options_with_values = {"--repo", "--config", "--run", "--verification", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
+    options_with_values = {"--repo", "--config", "--run", "--verification", "--target", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
     for item in argv:
         if skip_next:
             skip_next = False
@@ -1598,7 +2027,7 @@ def main() -> int:
     command = args.command
     repo = Path(args.repo).resolve()
     if command == "run":
-        return run_full(repo, " ".join(args.task), load_config(Path(args.config)), args.dry_run, args.verification)
+        return run_full(repo, " ".join(args.task), load_config(Path(args.config)), args.dry_run, args.verification, args.target)
     if command == "init":
         return stage_init(repo, " ".join(args.task))
     if command == "brief-check":
