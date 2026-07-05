@@ -276,6 +276,75 @@ Both commands are declared ONLY in `mentor-loop.config.json.example`, never in t
 `_optional_advisor_command` / `_optional_architect_command` to `advisor_command` /
 `architect_command`. Pin an explicit model in each command.
 
+## Failure-Review Loop (BUILD-D, optional)
+
+BUILD-C escalates *before* the apprentice runs, on a fail-open guard. BUILD-D is
+the sibling that escalates *after* execution, when the **same target** keeps
+failing. Repeated failure is often "the task was defined wrong," not "the
+apprentice is weak," so this loop audits the mentor's **direction** (goal,
+assumptions, scope) — it never reviews or writes code.
+
+### When it fires
+
+All triggers are scoped to one stable `target_id` (see below) and accumulate
+**non-consecutively** across runs:
+
+- the same target fails **2 or more times** (`FAILURE_TRIGGER_N = 2`),
+- `verification_failure` on the same target 2 or more times,
+- the apprentice emits a structured `brief_blocker: <reason>` line,
+- review returns `Stop and re-plan` (reason-code `direction_unclear`),
+- the mentor revised the brief and the target **still** fails.
+
+### `target_id`: what it is and why `--target` exists
+
+`target_id` is derived once from the normalized task string (`run`'s
+positional `task` argument) and frozen for the life of that piece of work. A
+plain retry of the same task re-derives the same id, so its counters
+accumulate naturally. When the mentor **narrows, re-routes, or rewrites** the
+task after a verdict, pass the parent's frozen id forward explicitly so the
+successor inherits the same failure history (and the same "already audited"
+status) instead of starting a fresh counter:
+
+```powershell
+python tools\mentor-loop.py run --repo path\to\target-repo --target <parent-target-id> "<narrowed task text>"
+```
+
+Omit `--target` to derive a fresh id from the task text. v0 limitation: two
+*unrelated* tasks with identical wording would otherwise share one counter —
+disambiguate those with an explicit `--target`.
+
+### What happens when it fires
+
+1. State for the target lives at `.mentor-loop/state/brief-review-loop.json`
+   (persisted across runs, since each CLI invocation is a separate process).
+2. The engine assembles a failure-attribution packet: the per-attempt history
+   for this target, the current Mentor Brief being audited, and blast-radius
+   context.
+3. The packet goes to the configured `architect_command` (same config key
+   BUILD-C uses — see "Optional Engine Automation" above). If no
+   `architect_command` is configured, or the command fails to run, the loop
+   **parks** (fail-closed) rather than guessing or skipping silently.
+4. The architect may return exactly one of these verdicts (no others are
+   legal):
+   - `revised_brief`, `narrowed_task`, `route_change`, `keep_brief_retry`,
+     `brief_sound_capability_gap`, `park_report`.
+5. **No-code enforcement**: if the architect's verdict contains a fenced code
+   block, a unified-diff marker, or a `file:line` edit, the whole verdict is
+   **rejected and parked** — never stripped or laundered into an executable
+   one. The architect audits direction; it does not patch.
+6. The audit is **one-shot per target**: once a target has been audited, a
+   successor inherits that "already audited" flag (via `--target`) rather than
+   getting a fresh quota. Only the owner can reset a target's quota and
+   counters. If a target still fails after its one audit, it parks for the
+   owner with the architect's verdict text attached for context.
+
+This loop is fully additive and advisory: it never changes a run's own
+pass/fail verdict, and a target that never repeats failure never triggers it.
+The metric series it writes (`.mentor-loop/state/failure-review-metric.jsonl`)
+is separate from the apprentice correction-rate ledger, so "does the brief
+review compound in value" stays a falsifiable, separately-measured question
+rather than folded into execution stats.
+
 ## Minimum Publishable Run Record
 
 Every run should leave behind:

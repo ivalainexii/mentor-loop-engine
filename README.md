@@ -78,7 +78,16 @@ python path\to\mentor-loop-engine\tools\mentor-loop.py architect-packet --repo p
 python path\to\mentor-loop-engine\tools\mentor-loop.py architect-ratify --repo path\to\target-repo --run <run-id> --verdict <file> --ref <ref>
 ```
 
-A one-shot `run` path and a `--dry-run` flag also exist. See `operator-runbook.md` and
+A one-shot `run` path and a `--dry-run` flag also exist. When the **same target** keeps failing
+(repeated failure, not a fail-open guard), the engine escalates to a direction-only architect
+review instead of retrying blind; a narrowed or re-routed retry inherits the same failure history
+via `--target`:
+
+```powershell
+python path\to\mentor-loop-engine\tools\mentor-loop.py run --repo path\to\target-repo --target <parent-target-id> "<narrowed task>"
+```
+
+See `operator-runbook.md` ("Failure-Review Loop") for the full trigger/verdict/park behavior, and
 `quickstart.md` for the full manual workflow.
 
 ## How the loop is wired
@@ -93,11 +102,14 @@ apprentice (cheap, per run)  ── executes strictly inside the brief's blast r
 gates (deterministic code)  ── blast-radius + runtime-floor checks; no model judgment
 ```
 
-The engine carries three guard/escalation mechanisms beyond the base loop: a **brief-honesty gate**
+The engine carries four guard/escalation mechanisms beyond the base loop: a **brief-honesty gate**
 (every guard must declare a fail-direction + reason), **architect escalation** (a fail-open/unsure
-guard is routed to the architect before the apprentice runs; the mentor may not self-approve it), and
+guard is routed to the architect before the apprentice runs; the mentor may not self-approve it),
 **architect-loop closure** (the engine assembles the consult packet, injects prior decisions into
-future briefs, and records the ruling back to the ledger — no ruling, no unlock).
+future briefs, and records the ruling back to the ledger — no ruling, no unlock), and a
+**failure-review loop** (the sibling POST-execution escalation: the same target failing repeatedly
+routes to a direction-only architect audit — never a code review — instead of a blind retry; see
+`operator-runbook.md`).
 
 ## Honest status: a working tool vs. an open research claim
 
@@ -110,8 +122,8 @@ research question this project started from — and this repo is deliberate abou
 
 **Established (in this repo, verifiable by running it):** the loop runs end-to-end and produces the
 full artifact set; the gates are real deterministic code exercised by tests; the
-guard / escalation / architect-loop round-trips behave as specified; 83 tests pass and the package
-self-check is green.
+guard / escalation / architect-loop / failure-review round-trips behave as specified; 149 tests pass
+and the package self-check is green.
 
 **Still open (stated plainly so it can't be quietly skipped):**
 
