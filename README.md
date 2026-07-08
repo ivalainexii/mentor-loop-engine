@@ -147,6 +147,11 @@ quietly moved later:
 
 The raw series lives in a target repo's `.mentor-loop/decisions.md`.
 
+The first preregistered pilot of that measurement closed **uninformative** — the registered metric
+turned out to be one the harness structurally couldn't produce, so it's zero evidence in either
+direction. The full postmortem, including how two independent adjudications caught it, is in
+[docs/aprime-postmortem.md](docs/aprime-postmortem.md).
+
 ## Current limitations
 
 - **No third-party cold-start of this engine.** The sibling *skill* had one interactive cold-start;
