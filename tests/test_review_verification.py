@@ -58,6 +58,55 @@ def classify(review_verdict: str, focused_code: int, regression_new: int = 0, wo
 LEGACY_PROMPT_SHA256 = "ad0d78ffcaef6471fd7553effad3a88f091d169d68e7550af43f5f5b8228776d"
 
 
+class PackageLessonSeedTests(unittest.TestCase):
+    def test_missing_versioned_seed_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            with patch.object(runtask, "PACKAGE_ROOT", Path(d)):
+                with self.assertRaisesRegex(RuntimeError, "package lesson seed missing"):
+                    runtask.active_lessons()
+
+    def test_empty_versioned_seed_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            package = Path(d)
+            seed = package / "evals" / "fixtures" / "package-lessons.md"
+            seed.parent.mkdir(parents=True)
+            seed.write_text("", encoding="utf-8")
+            with patch.object(runtask, "PACKAGE_ROOT", package):
+                with self.assertRaisesRegex(RuntimeError, "contains no active lessons"):
+                    runtask.active_lessons()
+
+    def test_versioned_seed_without_active_entries_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            package = Path(d)
+            seed = package / "evals" / "fixtures" / "package-lessons.md"
+            seed.parent.mkdir(parents=True)
+            seed.write_text(
+                "# Package seed\n- `seed_id`: test-seed\n\n## retired\n- `status`: retired\n",
+                encoding="utf-8",
+            )
+            with patch.object(runtask, "PACKAGE_ROOT", package):
+                with self.assertRaisesRegex(RuntimeError, "contains no active lessons"):
+                    runtask.active_lessons()
+
+    def test_versioned_seed_filters_to_active_entries(self):
+        with tempfile.TemporaryDirectory() as d:
+            package = Path(d)
+            seed = package / "evals" / "fixtures" / "package-lessons.md"
+            seed.parent.mkdir(parents=True)
+            seed.write_text(
+                "# Package seed\n- `seed_id`: test-seed\n\n"
+                "## active\n- `status`: active\n- `rule_for_next_time`: keep\n\n"
+                "## retired\n- `status`: retired\n- `rule_for_next_time`: omit\n",
+                encoding="utf-8",
+            )
+            with patch.object(runtask, "PACKAGE_ROOT", package):
+                lessons = runtask.active_lessons()
+
+        self.assertIn("## active", lessons)
+        self.assertNotIn("## retired", lessons)
+        self.assertIn("seed_id", lessons)
+
+
 class ClassifyFailClosedGuards(unittest.TestCase):
     def test_a_bad_patch_still_blocks(self):
         # dry-run #a: real regression -> BLOCK even if the review approved.

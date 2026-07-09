@@ -191,10 +191,15 @@ def issue_text(task: dict) -> str:
 
 
 def active_lessons() -> str:
-    path = PACKAGE_ROOT / ".mentor-loop" / "lessons.md"
+    path = PACKAGE_ROOT / "evals" / "fixtures" / "package-lessons.md"
     if not path.exists():
-        return "No active lessons found."
+        raise RuntimeError(f"package lesson seed missing: {path}")
     text = path.read_text(encoding="utf-8-sig")
+    if not text.strip():
+        raise RuntimeError(f"package lesson seed contains no active lessons: {path}")
+    seed_match = re.search(r"(?m)^- `seed_id`:\s*(\S+)\s*$", text)
+    if not seed_match:
+        raise RuntimeError(f"package lesson seed missing seed_id: {path}")
     entries: list[str] = []
     current: list[str] = []
     for line in text.splitlines():
@@ -210,8 +215,8 @@ def active_lessons() -> str:
         if "`status`: active" in entry:
             entries.append(entry)
     if not entries:
-        return "No active lessons found."
-    return "\n\n".join(entries)
+        raise RuntimeError(f"package lesson seed contains no active lessons: {path}")
+    return f"- `seed_id`: {seed_match.group(1)}\n\n" + "\n\n".join(entries)
 
 
 def lesson_origin_relation(task: dict) -> str:
@@ -222,7 +227,7 @@ def lesson_origin_relation(task: dict) -> str:
 def run_model_arm(task: dict, arm: str, repo: Path, run_dir: Path, config: dict) -> tuple[int, str]:
     prompt = issue_text(task)
     if arm == "lessons-only":
-        prompt += "\n\nActive lessons from package ledger:\n" + active_lessons()
+        prompt += "\n\nActive lessons from versioned package seed:\n" + active_lessons()
     (run_dir / f"{arm}-prompt.md").write_text(prompt, encoding="utf-8")
     output = run_dir / f"{arm}-codex-output.md"
     command = command_from_template(config["cheap_command"], repo, output)

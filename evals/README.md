@@ -8,17 +8,22 @@ It is headless batch work: use one-shot `mentor-loop.py run` and direct
 
 - `raw-weak`: cheap model receives only the issue text.
 - `lessons-only`: cheap model receives issue text plus active lessons from the
-  package ledger at `{package}/.mentor-loop/lessons.md`; no Mentor Brief.
+  versioned seed at `{package}/evals/fixtures/package-lessons.md`; no Mentor Brief.
 - `full-loop`: the one-shot engine path runs end-to-end.
 
 ## Lessons Seeding
 
-Fresh eval clones do not have a local `.mentor-loop/lessons.md`, so the
-`lessons-only` arm is seeded from this package's own active lessons. The
+Fresh eval targets do not have a local `.mentor-loop/lessons.md`. That path is
+optional mutable runtime state, so the `lessons-only` arm instead reads the
+package-owned, versioned active seed at `evals/fixtures/package-lessons.md`. The
 scorecard records `lesson_origin_relation`: `same-repo` for
 `kellyjonbrazil/jc` tasks, where several lessons were learned, and `cross-repo`
 for all other repos. Treat those groups as separate claims: same-repo transfer
 versus cross-domain meta-lesson value.
+
+The versioned seed is required package input. If it is missing, the eval fails
+as an infrastructure error instead of silently turning `lessons-only` into `raw-weak`.
+The current frozen seed ID is `mentor-loop-eval-lessons-2026-06-11-v1`.
 
 ## Run One Mock Task
 

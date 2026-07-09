@@ -196,8 +196,10 @@ Current release gate status:
 - Codex command resolution failure reports `ENV_FAILURE` without traceback.
 - Snapshot writes `apprentice-verification-summary.md` before review.
 - Windows encoding smoke checks pass for UTF-8 BOM reads and UTF-8 stdio.
-- Package lesson ledger captures the Windows text encoding rule with
-  `hit_count: 3`.
+- Tracked eval seed `evals/fixtures/package-lessons.md` captures the Windows
+  text encoding rule with `hit_count: 3`; mutable target ledgers remain runtime state.
+- The seed is frozen as `mentor-loop-eval-lessons-2026-06-11-v1`; every lesson
+  source artifact is packaged and the verifier runs `lessons-only` from an isolated manifest bundle.
 - Codex-native final report includes an apprentice verification summary.
 - Eval suite defines 12 real GitHub tasks across Python and JavaScript/TypeScript.
 - Eval suite verifier checks task count, language coverage, diff size, ground

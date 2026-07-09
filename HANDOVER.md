@@ -18,8 +18,8 @@ reliably.
 - Eval runner: `evals/run-task.py`.
 - Eval suite: 12 real GitHub tasks, balanced 6 Python / 6 JavaScript-TypeScript.
 - Known polluted tasks excluded: `jc-685`, `jc-687`.
-- Latest verifier status: green, including zip manifest check.
-- Latest zip: `../mentor-loop-lean-v0.zip` relative to this directory.
+- Latest directory verifier status: green.
+- Release zip: not present in this worktree; rebuild and pass `--zip` before publication.
 
 ## What To Read First
 
@@ -28,13 +28,14 @@ reliably.
 3. `writeup-draft.md` - current public case-study draft.
 4. `reports/eval-suite-v0-report.md` - what the eval suite contains.
 5. `evals/RUNBOOK.md` - how to run the live baseline.
-6. `.mentor-loop/lessons.md` - current judgment ledger.
+6. `evals/fixtures/package-lessons.md` - versioned lesson seed for reproducible evals.
 
 ## Important Paths
 
 ```text
 tools/mentor-loop.py                  # stage engine and one-shot run mode
 evals/run-task.py                     # headless eval runner
+evals/fixtures/package-lessons.md     # versioned, release-frozen eval seed
 evals/tasks/*.json                    # 12 real tasks plus mock-smoke
 gates/blast-radius-check.py           # changed-file / artifact scope gate
 gates/runtime-floor-check.py          # Python runtime compatibility gate
@@ -54,10 +55,10 @@ python outputs\mentor-loop-lean-v0\tools\verify-package.py
 python outputs\mentor-loop-lean-v0\tools\verify-package.py --zip outputs\mentor-loop-lean-v0.zip
 ```
 
-Expected result: every line starts with `OK`, ending with:
+With `--zip`, every line should start with `OK`, ending with:
 
 ```text
-OK  zip matches manifest (96 entries)
+OK  zip matches manifest (<current manifest entry count> entries)
 ```
 
 ## How To Run A Small Live Probe
@@ -84,7 +85,7 @@ specific absolute path.
 
 - `raw-weak`: weak model gets only issue text.
 - `lessons-only`: weak model gets issue text plus active lessons from this
-  package's `.mentor-loop/lessons.md`.
+  package's versioned `evals/fixtures/package-lessons.md` seed.
 - `full-loop`: one-shot Mentor Loop path with strong brief/review and weak
   apprentice.
 
@@ -172,6 +173,6 @@ The last local package verification passed after Work Order 3:
 - `infra_error` classification;
 - per-repo source clone cache;
 - baseline-relative regression classification;
-- package lessons seeded into `lessons-only`;
-- zip contents match manifest.
+- versioned package lesson seed injected into `lessons-only`;
+- release zip must be rebuilt and checked against the current manifest.
 
