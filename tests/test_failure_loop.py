@@ -62,16 +62,20 @@ class ClassifyReviewReasonTests(unittest.TestCase):
         self.assertEqual(ml.classify_review_reason("- Verdict: Stop and re-plan"), "direction_unclear")
 
     def test_needs_fixes(self):
-        self.assertEqual(ml.classify_review_reason("Needs fixes in module x"), "needs_fixes")
+        self.assertEqual(ml.classify_review_reason("Verdict: Needs fixes"), "needs_fixes")
 
     def test_approved(self):
-        self.assertEqual(ml.classify_review_reason("- Approved"), "approved")
+        self.assertEqual(ml.classify_review_reason("Verdict: Approved"), "approved")
 
     def test_other(self):
         self.assertEqual(ml.classify_review_reason("inconclusive text"), "other")
 
     def test_case_insensitive(self):
-        self.assertEqual(ml.classify_review_reason("STOP AND RE-PLAN"), "direction_unclear")
+        self.assertEqual(ml.classify_review_reason("Verdict: STOP AND RE-PLAN"), "direction_unclear")
+
+    def test_mentions_outside_verdict_do_not_trigger(self):
+        review = "## Verification Quality\nApproved\n\n## Blocking Issues\nNeeds fixes may be required."
+        self.assertEqual(ml.classify_review_reason(review), "other")
 
 
 class DetectBriefBlockerTests(unittest.TestCase):

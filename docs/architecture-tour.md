@@ -132,7 +132,7 @@ memory:
   `test_architect_loop.py`, `test_blast_radius_check.py`, `test_brief_honesty.py`,
   `test_brief_review.py`, `test_failure_loop.py`, `test_review_verification.py`, and
   `test_runtime_floor_check.py` — run via `python -m unittest discover -s tests`.
-  `README.md` states 149 tests pass this way and that the package self-check
+  `README.md` states 166 tests pass this way and that the package self-check
   (`python tools/verify-package.py`) is also green.
 - **The postmortem exists and says what it says.** `docs/aprime-postmortem.md`
   documents a preregistered experiment on the compounding-judgment thesis: an

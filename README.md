@@ -130,7 +130,7 @@ research question this project started from — and this repo is deliberate abou
 
 **Established (in this repo, verifiable by running it):** the loop runs end-to-end and produces the
 full artifact set; the gates are real deterministic code exercised by tests; the
-guard / escalation / architect-loop / failure-review round-trips behave as specified; 149 tests pass
+guard / escalation / architect-loop / failure-review round-trips behave as specified; 166 tests pass
 and the package self-check is green.
 
 **Still open (stated plainly so it can't be quietly skipped):**

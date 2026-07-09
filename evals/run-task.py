@@ -424,6 +424,24 @@ def parse_review_verdict(engine_output: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def parse_engine_field(engine_output: str, field: str) -> str:
+    match = re.search(rf"^- {re.escape(field)}:\s*(.+)$", engine_output, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def review_verdict_outcome(value: str) -> str | None:
+    normalized = re.sub(r"[*_`]", "", (value or "")).strip().lstrip("-").strip().lower()
+    if normalized.startswith("verdict:"):
+        normalized = normalized.split(":", 1)[1].strip()
+    normalized = normalized.rstrip(".!").strip()
+    choices = {
+        "approved": "approved",
+        "needs fixes": "needs_fixes",
+        "stop and re-plan": "stop_and_replan",
+    }
+    return choices.get(normalized)
+
+
 def parse_gate_exit(engine_output: str) -> str:
     codes = re.findall(
         r"^- (?:blast_radius|runtime_floor)_gate_exit_code:\s*(\d+)$",
@@ -450,20 +468,35 @@ def classify(
         return "infra_error"
     if env_code != 0:
         return "env_failure"
+    run_reasons = {
+        reason.strip()
+        for reason in parse_engine_field(engine_output, "run_block_reasons").split(",")
+        if reason.strip() and reason.strip() != "none"
+    }
+    if any(reason.startswith("verification_") for reason in run_reasons):
+        return "verification_failure"
+    if {"failure_review_error", "failure_review_unknown"} & run_reasons:
+        return "infra_error"
+    if "failure_review_park" in run_reasons or any(reason.startswith("review_") for reason in run_reasons):
+        return "review_blocked"
+    if {"deterministic_gates", "brief_check"} & run_reasons:
+        return "gate_blocked"
+    parsed_review = review_verdict_outcome(review_verdict)
+    if review_verdict and parsed_review != "approved":
+        return "review_blocked"
     if model_code != 0:
         if "stopped_during_brief" in engine_output:
             return "gate_blocked"
-        if "gate_" in engine_output or "result: BLOCKED" in engine_output:
+        if re.search(r"stage:\s*(?:brief-check|gates)\s*\|\s*result:\s*BLOCKED", engine_output, re.IGNORECASE):
             return "gate_blocked"
-        if "Needs fixes" in engine_output or "Stop and re-plan" in engine_output:
+        gate_exit = parse_gate_exit(engine_output)
+        if gate_exit and gate_exit != "0":
+            return "gate_blocked"
+        if parsed_review in {"needs_fixes", "stop_and_replan"}:
             return "review_blocked"
         if any(marker in engine_output for marker in ("Traceback", "FileNotFoundError", "No such file", "cannot find the file")):
             return "infra_error"
         return "protocol_violation"
-    # A review verdict other than approval blocks acceptance even when the
-    # engine exits 0 (observed live: verdict "Stop and re-plan" with exit 0).
-    if review_verdict and not re.search(r"approve", review_verdict, re.IGNORECASE):
-        return "review_blocked"
     # Passing tests prove nothing if the model never changed the worktree.
     if not work_changed:
         return "no_op"

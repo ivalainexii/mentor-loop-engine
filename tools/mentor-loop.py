@@ -214,13 +214,86 @@ def summarize_gate(output: str) -> str:
     return first[0].strip() if first else "(no output)"
 
 
+def _normalize_review_line(raw_line: str) -> str:
+    line = raw_line.strip().lstrip("-*#>").strip()
+    return re.sub(r"[*_`]", "", line).strip().lower()
+
+
 def summarize_review(review: str) -> str:
+    outcome = parse_review_outcome(review)
+    if outcome is None:
+        return "(verdict not found)"
     for line in review.splitlines():
-        if line.lower().startswith("- approved") or line.lower().startswith("- verdict"):
+        if parse_review_outcome(line) == outcome:
             return line.strip()
-        if "approved" in line.lower() or "needs fixes" in line.lower() or "stop and re-plan" in line.lower():
-            return line.strip()
-    return "(verdict not found)"
+    return outcome.replace("stop_and_replan", "Stop and re-plan").replace("needs_fixes", "Needs fixes").replace("approved", "Approved")
+
+
+def parse_review_outcome(review: str) -> str | None:
+    """Return one explicit reviewer enum, or None for missing/ambiguous prose.
+
+    The template contains all three choices on one line, so a line mentioning
+    multiple choices is an instruction, not a verdict.  A negative phrase such
+    as ``not approved`` is deliberately not accepted: the outcome must start
+    with one of the contract's three enum values after an optional ``Verdict:``.
+    """
+    outcomes: list[str] = []
+    choices = (
+        ("stop and re-plan", "stop_and_replan"),
+        ("needs fixes", "needs_fixes"),
+        ("approved", "approved"),
+    )
+    in_verdict_section = False
+    for raw_line in (review or "").splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("#"):
+            heading = _normalize_review_line(stripped.lstrip("#")).rstrip(":").strip()
+            in_verdict_section = heading == "verdict"
+            continue
+        low = _normalize_review_line(raw_line)
+        if low.startswith("verdict:"):
+            low = low.split(":", 1)[1].strip()
+        elif not in_verdict_section:
+            continue
+        low = low.rstrip(".!").strip()
+        for phrase, outcome in choices:
+            if low == phrase:
+                outcomes.append(outcome)
+                break
+    unique = set(outcomes)
+    return unique.pop() if len(unique) == 1 else None
+
+
+def verification_summary_outcome(summary: str | None) -> str:
+    """Classify host verification without changing its persisted text format."""
+    if summary is None:
+        return "not_configured"
+    overall = re.match(r"\s*overall_status:\s*(PASS|FAIL|COULD-NOT-RUN)\b", summary, re.IGNORECASE)
+    if overall:
+        return overall.group(1).lower().replace("-", "_")
+    # Backward-compatible fallback for pre-fix artifacts: only trust the status
+    # immediately following an engine-generated verification section header.
+    statuses = re.findall(
+        r"(?mi)^##\s+(?:focused|regression):[^\n]*\nstatus:\s*(PASS|FAIL|COULD-NOT-RUN)\b",
+        summary,
+    )
+    if not statuses:
+        top_level = re.match(r"\s*status:\s*(PASS|FAIL|COULD-NOT-RUN)\b", summary, re.IGNORECASE)
+        statuses = [top_level.group(1)] if top_level else []
+    if not statuses:
+        return "could_not_run"
+    normalized = {status.upper() for status in statuses}
+    if "COULD-NOT-RUN" in normalized:
+        return "could_not_run"
+    if "FAIL" in normalized:
+        return "fail"
+    return "pass" if normalized == {"PASS"} else "could_not_run"
+
+
+def stage_result(summary: str) -> str | None:
+    """Read the machine result field emitted by ``stage_summary``."""
+    match = re.search(r"(?:^|\|)\s*result:\s*([A-Za-z_-]+)", summary or "", re.IGNORECASE)
+    return match.group(1).upper() if match else None
 
 
 def summarize_apprentice_verification(log: str) -> str:
@@ -1039,12 +1112,13 @@ def run_review_verification(repo: Path, verification_path: Path | None) -> str |
         return None
     verification_path = Path(verification_path)
     if not verification_path.exists():
-        return "status: COULD-NOT-RUN (verification spec not found)"
+        return "overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (verification spec not found)"
     try:
         spec = json.loads(verification_path.read_text(encoding="utf-8-sig"))
     except Exception as error:  # malformed spec => fail closed
-        return f"status: COULD-NOT-RUN (unreadable verification spec: {error})"
+        return f"overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (unreadable verification spec: {error})"
     sections: list[str] = []
+    statuses: list[str] = []
     for key in ("focused", "regression"):
         for check in spec.get(key, []):
             name = check.get("name", "unnamed")
@@ -1056,11 +1130,13 @@ def run_review_verification(repo: Path, verification_path: Path | None) -> str |
                 code, output, status = 127, str(error), "COULD-NOT-RUN"
             except Exception as error:  # any runner error => fail closed
                 code, output, status = -1, str(error), "COULD-NOT-RUN"
+            statuses.append(status)
             tail = output[-1000:] if output else ""
             sections.append(f"## {key}: {name}\nstatus: {status}\nexit_code: {code}\n\n{tail}")
     if not sections:
-        return "status: COULD-NOT-RUN (no verification commands defined)"
-    return "\n\n".join(sections)
+        return "overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (no verification commands defined)"
+    overall = "COULD-NOT-RUN" if "COULD-NOT-RUN" in statuses else "FAIL" if "FAIL" in statuses else "PASS"
+    return f"overall_status: {overall}\n\n" + "\n\n".join(sections)
 
 
 def write_dry_run_report(run_dir: Path, run_id: str) -> str:
@@ -1580,12 +1656,12 @@ def failure_triggers(entry: dict[str, object]) -> list[str]:
 def classify_review_reason(review: str) -> str:
     """Map a review verdict to a reason-code (pure), keyed on the review's own vocabulary
     (Approved / Needs fixes / Stop and re-plan). 'Stop and re-plan' => direction_unclear."""
-    low = (review or "").lower()
-    if "stop and re-plan" in low:
+    outcome = parse_review_outcome(review)
+    if outcome == "stop_and_replan":
         return "direction_unclear"
-    if "needs fixes" in low:
+    if outcome == "needs_fixes":
         return "needs_fixes"
-    if "approved" in low:
+    if outcome == "approved":
         return "approved"
     return "other"
 
@@ -1918,18 +1994,31 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
         review = read_text(run_dir / "review.md") if (run_dir / "review.md").exists() else ""
         write_text(run_dir / "review-exit-code.txt", f"exit_code: {review_code}\n")
         capture_lesson(repo, run_id, run_dir, review)
-        final = assemble_final_report(ensure_git_repo(repo), run_id).replace("- review_exit_code: session-written", f"- review_exit_code: {review_code}")
-        write_text(run_dir / "final-report.md", final)
-        print(final)
-        result = 0 if apprentice_code == 0 and gates_code == 0 and review_code == 0 else 1
-        # ml-v2 BUILD-D: post-exec failure-attribution loop. ADDITIVE — never alters `result`;
-        # any error here is swallowed so D can never break the run's own verdict.
+        review_outcome = parse_review_outcome(review)
+        verification_outcome = verification_summary_outcome(verification_results)
+        block_reasons: list[str] = []
+        if apprentice_code != 0:
+            block_reasons.append("apprentice_process")
+        if gates_code != 0:
+            block_reasons.append("deterministic_gates")
+        if review_code != 0:
+            block_reasons.append("review_process")
+        if review_outcome != "approved":
+            block_reasons.append(f"review_{review_outcome or 'invalid'}")
+        if verification_outcome not in {"pass", "not_configured"}:
+            block_reasons.append(f"verification_{verification_outcome}")
+        result = 1 if block_reasons else 0
+        # ml-v2 BUILD-D: post-exec failure-attribution may only preserve or
+        # tighten the run result.  PARK, malformed output, or a diagnostic
+        # failure is a machine-visible non-success.
+        failure_review = ""
+        failure_review_outcome = "ERROR"
         try:
             brief_blocked, brief_blocker_reason = detect_brief_blocker(apprentice_log)
             signals = {
                 "run_id": run_id,
                 "failed": result != 0,
-                "verification_failed": bool(verification_results) and "status: FAIL" in verification_results,
+                "verification_failed": verification_outcome == "fail",
                 "brief_blocker": brief_blocked,
                 "brief_blocker_reason": brief_blocker_reason,
                 "review_reason": classify_review_reason(review),
@@ -1937,9 +2026,38 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
                 # the audited-target re-fail PARK, so brief_revised is not auto-wired in v0.
                 "brief_revised": False,
             }
-            print(maybe_run_failure_review(repo, run_dir, run_id, task, target_id, signals, config))
-        except Exception as d_exc:  # noqa: BLE001 -- D is advisory; must not touch the run verdict
-            append_text(run_dir / "failure-review.log", f"failure-review error (non-fatal): {d_exc}\n")
+            failure_review = maybe_run_failure_review(repo, run_dir, run_id, task, target_id, signals, config)
+            failure_review_outcome = stage_result(failure_review) or "UNKNOWN"
+            if failure_review_outcome == "PARK":
+                block_reasons.append("failure_review_park")
+                result = 1
+            elif failure_review_outcome != "OK":
+                block_reasons.append("failure_review_unknown")
+                result = 1
+        except Exception as d_exc:  # noqa: BLE001 -- diagnostic failure blocks success but still writes the final report
+            append_text(run_dir / "failure-review.log", f"failure-review error (run blocked): {d_exc}\n")
+            block_reasons.append("failure_review_error")
+            result = 1
+        run_outcome = "PARK" if failure_review_outcome == "PARK" else "BLOCKED" if result else "PASS"
+        metadata = "\n".join(
+            [
+                f"- review_exit_code: {review_code}",
+                f"- semantic_review_outcome: {review_outcome or 'invalid'}",
+                f"- host_verification_outcome: {verification_outcome}",
+                f"- failure_review_outcome: {failure_review_outcome}",
+                f"- run_outcome: {run_outcome}",
+                f"- run_block_reasons: {', '.join(block_reasons) if block_reasons else 'none'}",
+            ]
+        )
+        final = assemble_final_report(ensure_git_repo(repo), run_id).replace(
+            "- review_exit_code: session-written",
+            metadata,
+            1,
+        )
+        write_text(run_dir / "final-report.md", final)
+        print(final)
+        if failure_review:
+            print(failure_review)
         return result
     except Exception as exc:
         final = f"# Mentor Loop Final Report\n\n- run_id: {run_id}\n- status: failed\n- error: {exc}\n"
