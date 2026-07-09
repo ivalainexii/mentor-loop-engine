@@ -35,6 +35,14 @@ It's **model-agnostic**: the engine drives a CLI (shipped configured for `codex`
   green — real execution, not "OK by inspection": `python -m unittest discover -s tests` and
   `python tools/verify-package.py` both pass.
 
+## How it works in 60 seconds
+
+A strong model (mentor) writes a work order — the Mentor Brief; a cheap model
+(apprentice) executes it inside a declared blast radius; deterministic gates check
+scope before a strong review ever reads the diff. Repeated failure on the same
+target escalates to an architect audit of the brief, not another blind retry. Full
+walkthrough, with real commands and artifacts: [docs/architecture-tour.md](docs/architecture-tour.md).
+
 ## Two substrates, one methodology
 
 This is the **engine** substrate. Its sibling, the

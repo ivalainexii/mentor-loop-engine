@@ -9,6 +9,8 @@
     "adoption-guide.md",
     "operator-runbook.md",
     "quickstart.md",
+    "docs/aprime-postmortem.md",
+    "docs/architecture-tour.md",
     "integration-map.md",
     "role-cards.md",
     "model-policy.md",
