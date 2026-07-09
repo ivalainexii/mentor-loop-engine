@@ -56,6 +56,36 @@ def run_local(args: list[str], cwd: Path) -> tuple[int, str]:
     return completed.returncode, completed.stdout
 
 
+def run_local_channels(args: list[str], cwd: Path) -> tuple[int, str, str]:
+    """Run a command while preserving stdout as data and stderr as diagnostics."""
+    completed = subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def git_porcelain_status(repo: Path) -> tuple[int, str, str]:
+    return run_local_channels(["git", "status", "--porcelain"], repo)
+
+
+def process_output(stdout: str, stderr: str) -> str:
+    return "\n".join(part.rstrip() for part in (stdout, stderr) if part.strip())
+
+
+def read_git_porcelain_status(repo: Path) -> tuple[str, str]:
+    code, status, diagnostics = git_porcelain_status(repo)
+    if code != 0:
+        details = process_output(status, diagnostics)
+        raise RuntimeError("could not read git status:\n" + (details or "(no diagnostics)"))
+    return status, diagnostics
+
+
 def ensure_git_repo(repo: Path) -> Path:
     code, output = run_local(["git", "rev-parse", "--show-toplevel"], repo)
     if code != 0:
@@ -75,13 +105,14 @@ def ensure_local_exclude(repo: Path, paths: list[str]) -> None:
 
 
 def ensure_clean_worktree(repo: Path) -> None:
-    code, output = run_local(["git", "status", "--porcelain"], repo)
-    if code != 0:
-        raise RuntimeError("could not read git status:\n" + output)
-    if output.strip():
+    status, diagnostics = read_git_porcelain_status(repo)
+    if status.strip():
+        details = status.rstrip()
+        if diagnostics.strip():
+            details += "\n\ngit diagnostics:\n" + diagnostics.rstrip()
         raise RuntimeError(
             "target repo has existing uncommitted changes; commit, stash, or use a clean worktree before running mentor-loop:\n"
-            + output
+            + details
         )
 
 
@@ -168,20 +199,29 @@ def run_codex(template: object, repo: Path, output: Path, prompt: str, log_path:
     return completed.returncode
 
 
-def git_snapshot(repo: Path) -> str:
-    code_status, status = run_local(["git", "status", "--porcelain"], repo)
+def render_git_snapshot(repo: Path, status: str, status_diagnostics: str) -> str:
     code_stat, stat = run_local(["git", "diff", "--stat"], repo)
     code_diff, diff = run_local(["git", "diff"], repo)
-    return "\n".join(
+    sections = [
+        "# git status --porcelain",
+        status,
+    ]
+    if status_diagnostics.strip():
+        sections.extend(["# git status diagnostics", status_diagnostics])
+    sections.extend(
         [
-            "# git status --porcelain",
-            status if code_status == 0 else f"(failed)\n{status}",
             "# git diff --stat",
             stat if code_stat == 0 else f"(failed)\n{stat}",
             "# git diff",
             diff if code_diff == 0 else f"(failed)\n{diff}",
         ]
     )
+    return "\n".join(sections)
+
+
+def git_snapshot(repo: Path) -> str:
+    status, status_diagnostics = read_git_porcelain_status(repo)
+    return render_git_snapshot(repo, status, status_diagnostics)
 
 
 def run_gate(args: list[str], repo: Path, output: Path) -> int:
@@ -1372,12 +1412,12 @@ def stage_gates(repo: Path, run_id: str, config: dict[str, object]) -> int:
 def stage_snapshot(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
     run_dir = run_dir_for(repo, run_id)
-    diff = git_snapshot(repo)
+    status, status_diagnostics = read_git_porcelain_status(repo)
+    diff = render_git_snapshot(repo, status, status_diagnostics)
     write_text(run_dir / "diff-and-status.txt", diff)
     apprentice_log = read_text(run_dir / "apprentice-log.md") if (run_dir / "apprentice-log.md").exists() else ""
     apprentice_verification_summary = summarize_apprentice_verification(apprentice_log)
     write_text(run_dir / "apprentice-verification-summary.md", apprentice_verification_summary + "\n")
-    status = run_local(["git", "status", "--porcelain"], repo)[1].strip()
     changed = len([line for line in status.splitlines() if line.strip()])
     print(stage_summary("snapshot", "OK", f"changed_entries={changed}; apprentice_verification_summary=written"))
     return 0
@@ -1408,7 +1448,7 @@ def assemble_final_report(repo: Path, run_id: str) -> str:
         apprentice_log = read_text(run_dir / "apprentice-log.md") if (run_dir / "apprentice-log.md").exists() else ""
         apprentice_verification_summary = summarize_apprentice_verification(apprentice_log)
     lesson_status = "Captured one reusable lesson." if (run_dir / "lesson.md").exists() else "No reusable lesson captured."
-    status_text = run_local(["git", "status", "--porcelain"], repo)[1].strip()
+    status_text = read_git_porcelain_status(repo)[0].strip()
 
     return "\n".join(
         [

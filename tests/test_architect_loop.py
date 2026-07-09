@@ -17,6 +17,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,67 @@ irrelevant.
 - Decision: seven.
 - Consequences / guardrail for future briefs: keep the exec channel opt-in.
 """
+
+
+class GitPorcelainChannelTests(unittest.TestCase):
+    """Git diagnostics must not be interpreted as porcelain status data."""
+
+    @staticmethod
+    def _git_result(*, returncode: int = 0, stdout: str = "", stderr: str = ""):
+        def fake_run(*args, **kwargs):
+            if kwargs.get("stderr") == subprocess.STDOUT:
+                return SimpleNamespace(returncode=returncode, stdout=stdout + stderr)
+            return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+        return fake_run
+
+    def test_clean_worktree_ignores_zero_exit_git_diagnostic(self):
+        warning = "warning: unable to access global excludes file: Permission denied\n"
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(stderr=warning),
+        ):
+            ml.ensure_clean_worktree(Path("."))
+
+    def test_clean_worktree_still_blocks_real_porcelain_output(self):
+        warning = "warning: unable to access global excludes file: Permission denied\n"
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(stdout=" M app.py\n", stderr=warning),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "app.py"):
+                ml.ensure_clean_worktree(Path("."))
+
+    def test_clean_worktree_still_blocks_failed_git_status(self):
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(returncode=128, stderr="fatal: not a work tree\n"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "could not read git status"):
+                ml.ensure_clean_worktree(Path("."))
+
+    def test_snapshot_cannot_recover_from_an_initial_git_status_failure(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / ".mentor-loop" / "runs" / "run-1").mkdir(parents=True)
+            status_results = [
+                (128, "", "fatal: first status failed\n"),
+                (0, "", ""),
+            ]
+            with mock.patch.object(ml, "ensure_git_repo", return_value=repo):
+                with mock.patch.object(
+                    ml,
+                    "git_porcelain_status",
+                    side_effect=status_results,
+                ) as status_mock:
+                    with mock.patch.object(ml, "run_local", return_value=(0, "")):
+                        with self.assertRaisesRegex(RuntimeError, "first status failed"):
+                            ml.stage_snapshot(repo, "run-1")
+
+            self.assertEqual(status_mock.call_count, 1)
 
 
 class LoadPrecedentsTests(unittest.TestCase):
