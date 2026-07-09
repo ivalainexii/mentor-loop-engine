@@ -259,8 +259,7 @@ def run_verification(task: dict, repo: Path, key: str, log_path: Path) -> int:
         command = check.get("command", [])
         code, output = run_command(command, repo, timeout=3600)
         lines.append(f"## {key}: {name}\nexit_code: {code}\n\n{output}")
-        if code != 0:
-            worst = code
+        worst = aggregate_verification_exit(worst, code)
     log_path.write_text("\n\n".join(lines), encoding="utf-8")
     return worst
 
@@ -296,6 +295,19 @@ def parse_failure_ids(output: str) -> set[str]:
     return ids
 
 
+def verification_exit_incomplete(exit_code: int) -> bool:
+    return exit_code in {124, 127}
+
+
+def aggregate_verification_exit(current: int, candidate: int) -> int:
+    """Preserve command-missing/timeout evidence across multi-check suites."""
+    if verification_exit_incomplete(current):
+        return current
+    if verification_exit_incomplete(candidate):
+        return candidate
+    return candidate if candidate != 0 else current
+
+
 def run_regression(task: dict, repo: Path, log_path: Path) -> dict:
     worst = 0
     total_count = 0
@@ -325,8 +337,7 @@ def run_regression(task: dict, repo: Path, log_path: Path) -> dict:
                 ]
             )
         )
-        if code != 0:
-            worst = code
+        worst = aggregate_verification_exit(worst, code)
     log_path.write_text("\n\n".join(sections), encoding="utf-8")
     return {
         "exit_code": worst,
@@ -463,6 +474,8 @@ def classify(
     infra_error: bool,
     review_verdict: str,
     work_changed: bool,
+    regression_code: int = 0,
+    regression_baseline_code: int = 0,
 ) -> str:
     if infra_error:
         return "infra_error"
@@ -473,14 +486,23 @@ def classify(
         for reason in parse_engine_field(engine_output, "run_block_reasons").split(",")
         if reason.strip() and reason.strip() != "none"
     }
-    if any(reason.startswith("verification_") for reason in run_reasons):
+    if "verification_could_not_run" in run_reasons:
+        return "verification_incomplete"
+    if "verification_fail" in run_reasons:
         return "verification_failure"
-    if {"failure_review_error", "failure_review_unknown"} & run_reasons:
+    if {"failure_review_error", "failure_review_unknown", "review_process"} & run_reasons:
         return "infra_error"
-    if "failure_review_park" in run_reasons or any(reason.startswith("review_") for reason in run_reasons):
+    if {"failure_review_park", "review_needs_fixes", "review_stop_and_replan"} & run_reasons:
         return "review_blocked"
+    if "review_invalid" in run_reasons:
+        return "protocol_violation"
     if {"deterministic_gates", "brief_check"} & run_reasons:
         return "gate_blocked"
+    if any(
+        verification_exit_incomplete(code)
+        for code in (focused_code, regression_code, regression_baseline_code)
+    ):
+        return "verification_incomplete"
     parsed_review = review_verdict_outcome(review_verdict)
     if review_verdict and parsed_review != "approved":
         return "review_blocked"
@@ -571,7 +593,7 @@ def main() -> int:
     artifacts = run_root / "artifacts" / task["id"] / args.arm / run_id
     artifacts.mkdir(parents=True, exist_ok=True)
 
-    env_code = model_code = focused_code = regression_code = 0
+    env_code = model_code = focused_code = regression_code = regression_baseline_code = 0
     regression_baseline_count = regression_new_failure_count = 0
     engine_output = ""
     notes = ""
@@ -591,6 +613,7 @@ def main() -> int:
         if env_code == 0:
             baseline_regression = run_regression(task, repo, artifacts / "baseline-regression.txt")
             regression_baseline_count = baseline_regression["count"]
+            regression_baseline_code = baseline_regression["exit_code"]
             if args.arm == "full-loop":
                 model_code, engine_output = run_full_loop(
                     task, repo, artifacts, config, regression_baseline_count
@@ -623,6 +646,8 @@ def main() -> int:
         infra_error,
         review_verdict,
         work_changed,
+        regression_code=regression_code,
+        regression_baseline_code=regression_baseline_code,
     )
     if outcome not in OUTCOME_TYPES:
         outcome = "protocol_violation"

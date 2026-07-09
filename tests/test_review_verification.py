@@ -66,7 +66,42 @@ class ClassifyFailClosedGuards(unittest.TestCase):
 
     def test_b_absent_verification_fails_closed(self):
         # dry-run #b: verification could not run (exit 127) -> BLOCK, never accept.
-        self.assertEqual(classify("Approved", focused_code=127), "verification_failure")
+        self.assertEqual(classify("Approved", focused_code=127), "verification_incomplete")
+
+    def test_focused_timeout_is_verification_incomplete(self):
+        self.assertEqual(classify("Approved", focused_code=124), "verification_incomplete")
+
+    def test_regression_could_not_run_cannot_cancel_against_baseline(self):
+        outcome = runtask.classify(
+            arm="lessons-only",
+            env_code=0,
+            model_code=0,
+            focused_code=0,
+            regression_new_failure_count=0,
+            engine_output="",
+            infra_error=False,
+            review_verdict="Verdict: Approved",
+            work_changed=True,
+            regression_code=127,
+            regression_baseline_code=127,
+        )
+        self.assertEqual(outcome, "verification_incomplete")
+
+    def test_real_unchanged_baseline_failure_remains_eligible(self):
+        outcome = runtask.classify(
+            arm="lessons-only",
+            env_code=0,
+            model_code=0,
+            focused_code=0,
+            regression_new_failure_count=0,
+            engine_output="",
+            infra_error=False,
+            review_verdict="Verdict: Approved",
+            work_changed=True,
+            regression_code=1,
+            regression_baseline_code=1,
+        )
+        self.assertEqual(outcome, "accepted")
 
     def test_blocked_by_construction_repro(self):
         # Pre-fix failure mode: eval review is forced non-approve (never saw
@@ -76,6 +111,37 @@ class ClassifyFailClosedGuards(unittest.TestCase):
     def test_clean_patch_accepts_once_review_can_approve(self):
         # The target the fix unlocks: clean verification + approvable review.
         self.assertEqual(classify("Approved", focused_code=0), "accepted")
+
+
+class EvalVerificationCompleteness(unittest.TestCase):
+    TASK = {
+        "verification": {
+            "focused": [
+                {"name": "missing", "command": ["missing"]},
+                {"name": "failure", "command": ["failure"]},
+            ],
+            "regression": [
+                {"name": "missing", "command": ["missing"]},
+                {"name": "failure", "command": ["failure"]},
+            ],
+        }
+    }
+
+    def test_focused_could_not_run_is_not_overwritten_by_later_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "focused.txt"
+            with patch.object(runtask, "run_command", side_effect=[(127, "missing"), (1, "failed")]):
+                code = runtask.run_verification(self.TASK, Path(d), "focused", log)
+
+        self.assertEqual(code, 127)
+
+    def test_regression_could_not_run_is_not_overwritten_by_later_failure(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "regression.txt"
+            with patch.object(runtask, "run_command", side_effect=[(124, "timeout"), (1, "failed")]):
+                result = runtask.run_regression(self.TASK, Path(d), log)
+
+        self.assertEqual(result["exit_code"], 124)
 
 
 class BuildReviewPromptAdditive(unittest.TestCase):
@@ -175,6 +241,56 @@ class RunReviewVerification(unittest.TestCase):
     def test_missing_spec_file_fails_closed(self):
         summary = ml.run_review_verification(PACKAGE_ROOT, PACKAGE_ROOT / "no-such-spec.json")
         self.assertIn("COULD-NOT-RUN", summary)
+
+    def test_non_object_root_returns_could_not_run(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            spec = tmp / "spec.json"
+            spec.write_text("[]", encoding="utf-8")
+
+            summary = ml.run_review_verification(tmp, spec)
+
+            self.assertTrue(summary.startswith("overall_status: COULD-NOT-RUN"))
+            self.assertIn("invalid verification spec", summary)
+
+    def test_section_must_be_array(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            spec = tmp / "spec.json"
+            spec.write_text(json.dumps({"focused": "oops", "regression": []}), encoding="utf-8")
+
+            summary = ml.run_review_verification(tmp, spec)
+
+            self.assertTrue(summary.startswith("overall_status: COULD-NOT-RUN"))
+            self.assertIn("focused must be an array", summary)
+
+    def test_item_must_be_object(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            spec = self._spec(tmp, [None], [])
+
+            summary = ml.run_review_verification(tmp, spec)
+
+            self.assertTrue(summary.startswith("overall_status: COULD-NOT-RUN"))
+            self.assertIn("focused[0] must be an object", summary)
+
+    def test_schema_validation_happens_before_execution(self):
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            spec = self._spec(
+                tmp,
+                [
+                    {"name": "would-run", "command": [sys.executable, "-c", "print('ran')"]},
+                    {"name": "bad", "command": "not-an-array"},
+                ],
+                [],
+            )
+            with patch.object(ml, "run_local") as runner:
+                summary = ml.run_review_verification(tmp, spec)
+
+            self.assertTrue(summary.startswith("overall_status: COULD-NOT-RUN"))
+            self.assertIn("focused[1].command must be a non-empty string array", summary)
+            runner.assert_not_called()
 
     def test_command_output_cannot_forge_the_overall_status(self):
         with tempfile.TemporaryDirectory() as d:
@@ -342,6 +458,33 @@ class EvalSemanticOutcomeClassification(unittest.TestCase):
             ]
         )
         self.assertEqual(self._classify(output), "verification_failure")
+
+    def test_verification_could_not_run_maps_to_incomplete(self):
+        output = "\n".join(
+            [
+                "- run_outcome: BLOCKED",
+                "- run_block_reasons: verification_could_not_run",
+            ]
+        )
+        self.assertEqual(self._classify(output), "verification_incomplete")
+
+    def test_review_process_maps_to_infrastructure_failure(self):
+        output = "\n".join(
+            [
+                "- run_outcome: BLOCKED",
+                "- run_block_reasons: review_process, review_invalid",
+            ]
+        )
+        self.assertEqual(self._classify(output), "infra_error")
+
+    def test_invalid_review_verdict_is_a_protocol_violation(self):
+        output = "\n".join(
+            [
+                "- run_outcome: BLOCKED",
+                "- run_block_reasons: review_invalid",
+            ]
+        )
+        self.assertEqual(self._classify(output, "(verdict not found)"), "protocol_violation")
 
     def test_real_gate_block_still_classifies_as_gate(self):
         output = "stage: gates | result: BLOCKED | detail: blast-radius=1"

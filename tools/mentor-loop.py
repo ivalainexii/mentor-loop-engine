@@ -1138,6 +1138,36 @@ Diff and status:
 """
 
 
+def invalid_verification_summary(detail: str) -> str:
+    return f"overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (invalid verification spec: {detail})"
+
+
+def validate_verification_spec(spec: object) -> tuple[list[tuple[str, str, list[str]]], str | None]:
+    """Validate the complete spec before any command can execute."""
+    if not isinstance(spec, dict):
+        return [], "root must be an object"
+    normalized: list[tuple[str, str, list[str]]] = []
+    for key in ("focused", "regression"):
+        section = spec.get(key, [])
+        if not isinstance(section, list):
+            return [], f"{key} must be an array"
+        for index, check in enumerate(section):
+            if not isinstance(check, dict):
+                return [], f"{key}[{index}] must be an object"
+            name = check.get("name", "unnamed")
+            if not isinstance(name, str):
+                return [], f"{key}[{index}].name must be a string"
+            command = check.get("command")
+            if (
+                not isinstance(command, list)
+                or not command
+                or not all(isinstance(part, str) and part for part in command)
+            ):
+                return [], f"{key}[{index}].command must be a non-empty string array"
+            normalized.append((key, name or "unnamed", command))
+    return normalized, None
+
+
 def run_review_verification(repo: Path, verification_path: Path | None) -> str | None:
     """Run the task's focused+regression verification on the host so the review
     consumes REAL results (the codex sandbox cannot run python, but this engine
@@ -1157,22 +1187,22 @@ def run_review_verification(repo: Path, verification_path: Path | None) -> str |
         spec = json.loads(verification_path.read_text(encoding="utf-8-sig"))
     except Exception as error:  # malformed spec => fail closed
         return f"overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (unreadable verification spec: {error})"
+    checks, validation_error = validate_verification_spec(spec)
+    if validation_error is not None:
+        return invalid_verification_summary(validation_error)
     sections: list[str] = []
     statuses: list[str] = []
-    for key in ("focused", "regression"):
-        for check in spec.get(key, []):
-            name = check.get("name", "unnamed")
-            command = check.get("command", [])
-            try:
-                code, output = run_local(resolve_command_head(command), repo)
-                status = "PASS" if code == 0 else "FAIL"
-            except FileNotFoundError as error:
-                code, output, status = 127, str(error), "COULD-NOT-RUN"
-            except Exception as error:  # any runner error => fail closed
-                code, output, status = -1, str(error), "COULD-NOT-RUN"
-            statuses.append(status)
-            tail = output[-1000:] if output else ""
-            sections.append(f"## {key}: {name}\nstatus: {status}\nexit_code: {code}\n\n{tail}")
+    for key, name, command in checks:
+        try:
+            code, output = run_local(resolve_command_head(command), repo)
+            status = "PASS" if code == 0 else "FAIL"
+        except FileNotFoundError as error:
+            code, output, status = 127, str(error), "COULD-NOT-RUN"
+        except Exception as error:  # any runner error => fail closed
+            code, output, status = -1, str(error), "COULD-NOT-RUN"
+        statuses.append(status)
+        tail = output[-1000:] if output else ""
+        sections.append(f"## {key}: {name}\nstatus: {status}\nexit_code: {code}\n\n{tail}")
     if not sections:
         return "overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (no verification commands defined)"
     overall = "COULD-NOT-RUN" if "COULD-NOT-RUN" in statuses else "FAIL" if "FAIL" in statuses else "PASS"
@@ -1542,7 +1572,8 @@ def stage_report(repo: Path, run_id: str) -> int:
 # REPEATED failure of the SAME TARGET: repeated failure is often "the task was defined wrong,"
 # not "the apprentice is weak," so D audits the mentor's DIRECTION (goal / assumptions / scope) and
 # NEVER writes code. Constitution §1 五原则⑤; PLAYBOOK 复核回路细则. trigger_source: failure_loop.
-# Fully ADDITIVE + advisory: D never changes a run's own pass/fail verdict.
+# Architect direction is advisory and never auto-applied. The D control gate is fail-closed:
+# PARK, unknown output, or diagnostics may tighten PASS to PARK/BLOCKED, never failure to success.
 
 FAILURE_LOOP_STATE_REL = ".mentor-loop/state/brief-review-loop.json"
 FAILURE_REVIEW_METRIC_REL = ".mentor-loop/state/failure-review-metric.jsonl"
@@ -1575,7 +1606,7 @@ def compute_target_id(task: str) -> str:
     accumulate); a narrowed / re-routed successor inherits it via ``run --target <id>``.
     v0 LIMIT (cross-vendor CV P1-c): the spec's 'task_id + blast-radius' inputs are not available
     before a run, so identity is the normalized task alone -- two unrelated tasks with identical
-    wording would share counters (advisory-only impact; disambiguate with an explicit --target)."""
+    wording would share counters and a fail-closed audit quota (disambiguate with an explicit --target)."""
     normalized = " ".join((task or "").split()).strip().lower()
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
 
@@ -1849,8 +1880,9 @@ def maybe_run_failure_review(
     signals: dict[str, object],
     config: dict[str, object] | None,
 ) -> str:
-    """BUILD-D orchestration (advisory-of-direction; NEVER changes the run's own verdict). Records
-    this attempt under ``target_id``, checks the repeated-failure triggers, and on a FRESH
+    """BUILD-D orchestration. Architect direction is advisory and NEVER auto-applied, while the
+    control gate is fail-closed and may tighten PASS to PARK/BLOCKED. Records this attempt under
+    ``target_id``, checks the repeated-failure triggers, and on a FRESH
     (un-audited) trigger routes a FAILURE packet to a CONSTRAINED architect brief-review. Fail-closed:
     no architect_command, a code-laundering verdict, an illegal verdict, or a re-failing already-audited
     target => PARK & ask owner. One audit attempt per target (owner-only reset). Returns a status."""
