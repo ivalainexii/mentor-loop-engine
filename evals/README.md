@@ -11,6 +11,12 @@ It is headless batch work: use one-shot `mentor-loop.py run` and direct
   versioned seed at `{package}/evals/fixtures/package-lessons.md`; no Mentor Brief.
 - `full-loop`: the one-shot engine path runs end-to-end.
 
+For every arm the harness reserves a collision-resistant run ID and create-only
+artifact/worktree paths. In `full-loop`, that exact ID is passed to the engine as
+`--run-id`; a successful engine result must report the same ID. A missing or
+mismatched identity is `infra_error`, never an accepted run, and an existing path is
+never deleted or reused.
+
 ## Lessons Seeding
 
 Fresh eval targets do not have a local `.mentor-loop/lessons.md`. That path is

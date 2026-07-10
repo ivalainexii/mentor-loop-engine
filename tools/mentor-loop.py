@@ -10,8 +10,10 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -24,8 +26,38 @@ def slugify(value: str) -> str:
 
 
 def now_run_id(task: str) -> str:
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{stamp}-{slugify(task)}"
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    nonce = uuid.uuid4().hex[:16]
+    slug_budget = 128 - len(stamp) - len(nonce) - 2
+    task_slug = slugify(task)[:slug_budget].rstrip("-") or "task"
+    return f"{stamp}-{task_slug}-{nonce}"
+
+
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOWS_RESERVED_STEMS = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+def validate_run_id(run_id: str) -> str:
+    """Return a safe, single-path-segment run id or reject it."""
+    if not isinstance(run_id, str) or not RUN_ID_PATTERN.fullmatch(run_id):
+        raise ValueError(
+            "run_id must be 1-128 ASCII characters, start with an alphanumeric character, "
+            "and contain only alphanumerics, '.', '_', or '-'"
+        )
+    if ".." in run_id:
+        raise ValueError("run_id must not contain '..'")
+    if run_id.endswith("."):
+        raise ValueError("run_id must not end with '.'")
+    if run_id.split(".", 1)[0].upper() in WINDOWS_RESERVED_STEMS:
+        raise ValueError(f"run_id uses a reserved Windows device name: {run_id}")
+    return run_id
 
 
 def read_text(path: Path) -> str:
@@ -243,7 +275,83 @@ def stage_summary(stage: str, result: str, detail: str) -> str:
 
 
 def run_dir_for(repo: Path, run_id: str) -> Path:
-    return repo / ".mentor-loop" / "runs" / run_id
+    return repo / ".mentor-loop" / "runs" / validate_run_id(run_id)
+
+
+def path_is_link_or_reparse(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    try:
+        path_stat = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise RuntimeError(f"could not inspect run storage path: {path}") from error
+    attributes = getattr(path_stat, "st_file_attributes", 0)
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def ensure_run_storage_safe(repo: Path, run_dir: Path) -> None:
+    """Reject identity aliases and any run-storage path that resolves outside repo."""
+    repo_root = repo.resolve(strict=False)
+    storage_paths = [repo / ".mentor-loop", repo / ".mentor-loop" / "runs", run_dir]
+    for candidate in storage_paths:
+        if path_is_link_or_reparse(candidate):
+            raise RuntimeError(f"run storage link or reparse point is not allowed: {candidate}")
+    resolved_run = run_dir.resolve(strict=False)
+    try:
+        common = os.path.commonpath([str(repo_root), str(resolved_run)])
+    except ValueError as error:
+        raise RuntimeError(f"run directory resolves outside repository: {run_dir}") from error
+    if os.path.normcase(common) != os.path.normcase(str(repo_root)):
+        raise RuntimeError(f"run directory resolves outside repository: {run_dir}")
+
+
+def existing_run_dir_for(repo: Path, run_id: str) -> Path:
+    run_dir = run_dir_for(repo, run_id)
+    ensure_run_storage_safe(repo, run_dir)
+    if not run_dir.is_dir():
+        raise RuntimeError(f"run directory does not exist: {run_dir}")
+    stored_name = run_dir.resolve(strict=True).name
+    if stored_name != run_id:
+        raise RuntimeError(
+            f"run directory identity does not match exactly: requested={run_id}; stored={stored_name}"
+        )
+    return run_dir
+
+
+def reserve_run_dir(
+    repo: Path, task: str, requested_run_id: str | None = None, attempts: int = 8
+) -> tuple[str, Path]:
+    """Atomically reserve a fresh run directory; existing evidence is immutable."""
+    runs_dir = repo / ".mentor-loop" / "runs"
+    if requested_run_id is not None:
+        run_id = validate_run_id(requested_run_id)
+        run_dir = run_dir_for(repo, run_id)
+        ensure_run_storage_safe(repo, run_dir)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        ensure_run_storage_safe(repo, run_dir)
+        try:
+            run_dir.mkdir(exist_ok=False)
+        except FileExistsError as error:
+            raise RuntimeError(f"run directory already exists: {run_dir}") from error
+        ensure_run_storage_safe(repo, run_dir)
+        return run_id, run_dir
+
+    ensure_run_storage_safe(repo, runs_dir / "probe")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    ensure_run_storage_safe(repo, runs_dir / "probe")
+    for _attempt in range(attempts):
+        run_id = validate_run_id(now_run_id(task))
+        run_dir = run_dir_for(repo, run_id)
+        ensure_run_storage_safe(repo, run_dir)
+        try:
+            run_dir.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        ensure_run_storage_safe(repo, run_dir)
+        return run_id, run_dir
+    raise RuntimeError(f"could not reserve a unique run directory after {attempts} attempts")
 
 
 def summarize_gate(output: str) -> str:
@@ -634,7 +742,7 @@ def stage_architect_packet(repo: Path, run_id: str, config: dict[str, object] | 
     -- that draft never unlocks; only architect-ratify (C-3) does."""
     try:
         repo = ensure_git_repo(repo)
-        run_dir = run_dir_for(repo, run_id)
+        run_dir = existing_run_dir_for(repo, run_id)
         packet_path = run_dir / "architect-packet.md"
         brief_path = run_dir / "mentor-brief.md"
         if not brief_path.exists():
@@ -665,7 +773,7 @@ def stage_architect_packet(repo: Path, run_id: str, config: dict[str, object] | 
         return 0
     except Exception as error:  # fail-closed: any assembly error is BLOCKED, never a crash that hides the lock
         try:
-            run_dir = run_dir_for(ensure_git_repo(repo), run_id)
+            run_dir = existing_run_dir_for(ensure_git_repo(repo), run_id)
             write_text(run_dir / "architect-packet.md", f"# Architect consult packet -- BLOCKED\n\n- run_id: {run_id}\n- reason: {error}\n")
         except Exception:
             pass
@@ -740,7 +848,7 @@ def stage_architect_ratify(repo: Path, run_id: str, verdict_path: str, ref: str 
     never unlocks). It does NOT generate a verdict -- it only records the one it
     is given and applies the deterministic stamp that lets brief-check pass."""
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     verdict_file = Path(verdict_path)
     if not verdict_file.exists():
         print(stage_summary("architect-ratify", "BLOCKED", f"verdict file not found: {verdict_path} (no verdict, no unlock)"))
@@ -1239,13 +1347,13 @@ def write_dry_run_report(run_dir: Path, run_id: str) -> str:
     return final
 
 
-def init_run(repo: Path, task: str) -> tuple[str, Path, str]:
+def init_run(repo: Path, task: str, requested_run_id: str | None = None) -> tuple[str, Path, str]:
+    if requested_run_id is not None:
+        validate_run_id(requested_run_id)
     repo = ensure_git_repo(repo)
     ensure_local_exclude(repo, [".mentor-loop/"])
     ensure_clean_worktree(repo)
-    run_id = now_run_id(task)
-    run_dir = run_dir_for(repo, run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_id, run_dir = reserve_run_dir(repo, task, requested_run_id)
     write_text(run_dir / "task.txt", task)
     active_lessons = load_active_lessons(repo)
     write_text(run_dir / "active-lessons.md", active_lessons)
@@ -1255,8 +1363,8 @@ def init_run(repo: Path, task: str) -> tuple[str, Path, str]:
     return run_id, run_dir, active_lessons
 
 
-def stage_init(repo: Path, task: str) -> int:
-    run_id, run_dir, active_lessons = init_run(repo, task)
+def stage_init(repo: Path, task: str, requested_run_id: str | None = None) -> int:
+    run_id, run_dir, active_lessons = init_run(repo, task, requested_run_id)
     print(f"run_id: {run_id}")
     print("active_lessons:")
     print(active_lessons)
@@ -1266,7 +1374,7 @@ def stage_init(repo: Path, task: str) -> int:
 
 def stage_brief_check(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     if not brief_path.exists():
         detail = "mentor-brief.md missing"
@@ -1350,7 +1458,7 @@ def stage_brief_review(repo: Path, run_id: str, config: dict[str, object]) -> in
     replacement. Always returns 0 (advisory is non-blocking by contract).
     """
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     advisory_path = run_dir / "brief-advisory.md"
 
@@ -1396,7 +1504,7 @@ def stage_brief_review(repo: Path, run_id: str, config: dict[str, object]) -> in
 
 def stage_apprentice(repo: Path, run_id: str, config: dict[str, object]) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     if not brief_path.exists():
         print(stage_summary("apprentice", "BLOCKED", "mentor-brief.md missing"))
@@ -1421,7 +1529,7 @@ def stage_apprentice(repo: Path, run_id: str, config: dict[str, object]) -> int:
 
 def stage_gates(repo: Path, run_id: str, config: dict[str, object]) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     python_bin = config["python"]
     blast_code = run_gate(
         [python_bin, str(PACKAGE_ROOT / "gates" / "blast-radius-check.py"), "--brief", str(run_dir / "mentor-brief.md")],
@@ -1441,7 +1549,7 @@ def stage_gates(repo: Path, run_id: str, config: dict[str, object]) -> int:
 
 def stage_snapshot(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     status, status_diagnostics = read_git_porcelain_status(repo)
     diff = render_git_snapshot(repo, status, status_diagnostics)
     write_text(run_dir / "diff-and-status.txt", diff)
@@ -1455,7 +1563,7 @@ def stage_snapshot(repo: Path, run_id: str) -> int:
 
 def stage_capture_lesson(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     review_path = run_dir / "review.md"
     if not review_path.exists():
         print(stage_summary("capture-lesson", "BLOCKED", "review.md missing"))
@@ -1467,7 +1575,7 @@ def stage_capture_lesson(repo: Path, run_id: str) -> int:
 
 
 def assemble_final_report(repo: Path, run_id: str) -> str:
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     gate_blast = read_text(run_dir / "gate-blast-radius.txt") if (run_dir / "gate-blast-radius.txt").exists() else ""
     gate_runtime = read_text(run_dir / "gate-runtime-floor.txt") if (run_dir / "gate-runtime-floor.txt").exists() else ""
     review = read_text(run_dir / "review.md") if (run_dir / "review.md").exists() else ""
@@ -1534,7 +1642,7 @@ def assemble_final_report(repo: Path, run_id: str) -> str:
 
 def stage_report(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     required = [
         "mentor-brief.md",
         "apprentice-log.md",
@@ -1976,11 +2084,24 @@ def maybe_run_failure_review(
     )
 
 
-def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = False, verification_path: str | None = None, target: str | None = None) -> int:
-    run_id = "unknown"
-    run_dir = repo / ".mentor-loop" / "runs" / run_id
+def run_full(
+    repo: Path,
+    task: str,
+    config: dict[str, object],
+    dry_run: bool = False,
+    verification_path: str | None = None,
+    target: str | None = None,
+    requested_run_id: str | None = None,
+) -> int:
+    run_id = "unallocated"
+    run_dir: Path | None = None
     try:
-        run_id, run_dir, _active_lessons = init_run(repo, task)
+        if requested_run_id is not None:
+            run_id = validate_run_id(requested_run_id)
+        if requested_run_id is None:
+            run_id, run_dir, _active_lessons = init_run(repo, task)
+        else:
+            run_id, run_dir, _active_lessons = init_run(repo, task, requested_run_id)
         target_id = target or compute_target_id(task)  # BUILD-D: stable per-target identity
         if dry_run:
             write_text(run_dir / "mentor-brief.md", "(dry run: brief not generated)\n")
@@ -2133,7 +2254,8 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
         return result
     except Exception as exc:
         final = f"# Mentor Loop Final Report\n\n- run_id: {run_id}\n- status: failed\n- error: {exc}\n"
-        write_text(run_dir / "final-report.md", final)
+        if run_dir is not None:
+            write_text(run_dir / "final-report.md", final)
         print(final, file=sys.stderr)
         return 1
 
@@ -2149,10 +2271,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--verification", default=None, help="JSON spec of focused/regression commands to run before the review")
     run_parser.add_argument("--target", default=None, help="BUILD-D: stable target_id to inherit (a narrowed/re-routed successor passes the parent's frozen id; omit to derive from the task)")
+    run_parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
 
     init_parser = subparsers.add_parser("init", help="Create a run directory and prompt artifacts")
     init_parser.add_argument("task", nargs="+")
     init_parser.add_argument("--repo", default=".")
+    init_parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
 
     for name in ("brief-check", "brief-review", "apprentice", "gates", "snapshot", "capture-lesson", "report"):
         stage_parser = subparsers.add_parser(name)
@@ -2181,12 +2305,13 @@ def parse_legacy(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo", default=".", help="Target repo root")
     parser.add_argument("--config", default=str(PACKAGE_ROOT / "mentor-loop.config.json"))
     parser.add_argument("--dry-run", action="store_true", help="Create prompts/artifacts but do not invoke Codex")
+    parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
     return parser.parse_args(argv)
 
 
 def first_positional(argv: list[str]) -> str | None:
     skip_next = False
-    options_with_values = {"--repo", "--config", "--run", "--verification", "--target", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
+    options_with_values = {"--repo", "--config", "--run", "--run-id", "--verification", "--target", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
     for item in argv:
         if skip_next:
             skip_next = False
@@ -2210,16 +2335,30 @@ def main() -> int:
     first = first_positional(sys.argv[1:])
     if first not in commands:
         args = parse_legacy(sys.argv[1:])
-        return run_full(Path(args.repo).resolve(), " ".join(args.task), load_config(Path(args.config)), args.dry_run)
+        return run_full(
+            Path(args.repo).resolve(),
+            " ".join(args.task),
+            load_config(Path(args.config)),
+            args.dry_run,
+            requested_run_id=args.run_id,
+        )
 
     parser = build_parser()
     args = parser.parse_args()
     command = args.command
     repo = Path(args.repo).resolve()
     if command == "run":
-        return run_full(repo, " ".join(args.task), load_config(Path(args.config)), args.dry_run, args.verification, args.target)
+        return run_full(
+            repo,
+            " ".join(args.task),
+            load_config(Path(args.config)),
+            args.dry_run,
+            args.verification,
+            args.target,
+            args.run_id,
+        )
     if command == "init":
-        return stage_init(repo, " ".join(args.task))
+        return stage_init(repo, " ".join(args.task), args.run_id)
     if command == "brief-check":
         return stage_brief_check(repo, args.run)
     if command == "brief-review":

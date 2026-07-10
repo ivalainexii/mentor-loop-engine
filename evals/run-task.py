@@ -7,10 +7,12 @@ import argparse
 import csv
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -52,6 +54,19 @@ SCORECARD_COLUMNS = [
     "artifacts_dir",
     "notes",
 ]
+SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOWS_RESERVED_STEMS = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+class EvalReservationCollision(RuntimeError):
+    """A create-only eval artifact path already exists."""
 
 
 def configure_stdio() -> None:
@@ -136,6 +151,62 @@ def repo_slug(repo_url: str) -> str:
     return slug or "repo"
 
 
+def validate_eval_path_segment(value: str, label: str) -> str:
+    if not isinstance(value, str) or not SAFE_PATH_SEGMENT.fullmatch(value):
+        raise ValueError(f"{label} must be a safe 1-128 character ASCII path segment")
+    if ".." in value or value.endswith("."):
+        raise ValueError(f"{label} is not a canonical path segment: {value}")
+    if value.split(".", 1)[0].upper() in WINDOWS_RESERVED_STEMS:
+        raise ValueError(f"{label} uses a reserved Windows device name: {value}")
+    return value
+
+
+def ensure_eval_path_within(run_root: Path, candidate: Path) -> None:
+    root = run_root.resolve(strict=False)
+    resolved = candidate.resolve(strict=False)
+    try:
+        common = os.path.commonpath([str(root), str(resolved)])
+    except ValueError as error:
+        raise RuntimeError(f"eval path resolves outside work root: {candidate}") from error
+    if os.path.normcase(common) != os.path.normcase(str(root)):
+        raise RuntimeError(f"eval path resolves outside work root: {candidate}")
+
+
+def new_eval_run_id() -> str:
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return f"{stamp}-{uuid.uuid4().hex[:16]}"
+
+
+def reserve_eval_artifacts(
+    run_root: Path, task_id: str, arm: str, run_id: str
+) -> Path:
+    task_id = validate_eval_path_segment(task_id, "task_id")
+    arm = validate_eval_path_segment(arm, "arm")
+    run_id = validate_eval_path_segment(run_id, "run_id")
+    artifacts = run_root / "artifacts" / task_id / arm / run_id
+    ensure_eval_path_within(run_root, artifacts)
+    try:
+        artifacts.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise EvalReservationCollision(
+            f"eval artifact directory already exists: {artifacts}"
+        ) from error
+    ensure_eval_path_within(run_root, artifacts)
+    return artifacts
+
+
+def reserve_eval_run(
+    run_root: Path, task_id: str, arm: str, attempts: int = 8
+) -> tuple[str, Path]:
+    for _attempt in range(attempts):
+        run_id = new_eval_run_id()
+        try:
+            return run_id, reserve_eval_artifacts(run_root, task_id, arm, run_id)
+        except EvalReservationCollision:
+            continue
+    raise RuntimeError(f"could not reserve a unique eval run after {attempts} attempts")
+
+
 def ensure_mock_repo(repo: Path) -> None:
     repo.mkdir(parents=True, exist_ok=True)
     if not (repo / ".git").exists():
@@ -150,6 +221,12 @@ def ensure_mock_repo(repo: Path) -> None:
 
 def prepare_repo(task: dict, work_root: Path, run_id: str) -> Path:
     repo_url = task["repo"]["url"]
+    task_id = validate_eval_path_segment(task["id"], "task_id")
+    run_id = validate_eval_path_segment(run_id, "run_id")
+    worktree = work_root / f"{task_id}-{run_id}"
+    ensure_eval_path_within(work_root, worktree)
+    if os.path.lexists(worktree):
+        raise RuntimeError(f"eval worktree already exists: {worktree}")
     source = work_root / "sources" / repo_slug(repo_url)
     if repo_url.startswith("__mock__"):
         ensure_mock_repo(source)
@@ -163,9 +240,6 @@ def prepare_repo(task: dict, work_root: Path, run_id: str) -> Path:
         if code != 0:
             raise RuntimeError("git fetch failed:\n" + output)
 
-    worktree = work_root / f"{task['id']}-{run_id}"
-    if worktree.exists():
-        shutil.rmtree(worktree)
     base_ref = task["repo"].get("base_ref", "HEAD")
     code, output = run_command(["git", "worktree", "add", "--detach", str(worktree), base_ref], source)
     if code != 0:
@@ -370,7 +444,12 @@ def make_mock_engine_config(run_dir: Path) -> Path:
 
 
 def run_full_loop(
-    task: dict, repo: Path, run_dir: Path, config: dict, baseline_failures: int
+    task: dict,
+    repo: Path,
+    run_dir: Path,
+    config: dict,
+    baseline_failures: int,
+    run_id: str,
 ) -> tuple[int, str]:
     engine_config = config.get("mentor_loop_config")
     if engine_config == "__mock__":
@@ -428,6 +507,8 @@ def run_full_loop(
             str(config_path),
             "--verification",
             str(verification_spec),
+            "--run-id",
+            run_id,
             issue,
         ],
         repo,
@@ -443,6 +524,16 @@ def parse_review_verdict(engine_output: str) -> str:
 def parse_engine_field(engine_output: str, field: str) -> str:
     match = re.search(rf"^- {re.escape(field)}:\s*(.+)$", engine_output, re.MULTILINE)
     return match.group(1).strip() if match else ""
+
+
+def engine_run_identity_error(expected_run_id: str, engine_output: str) -> str | None:
+    observed = parse_engine_field(engine_output, "run_id")
+    if observed == expected_run_id:
+        return None
+    return (
+        "engine run identity mismatch: "
+        f"expected={expected_run_id}; observed={observed or 'missing'}"
+    )
 
 
 def review_verdict_outcome(value: str) -> str | None:
@@ -592,11 +683,9 @@ def main() -> int:
     task_path = args.task.resolve()
     task = read_json(task_path)
     config = read_json(args.config)
-    run_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     run_root = args.work_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
-    artifacts = run_root / "artifacts" / task["id"] / args.arm / run_id
-    artifacts.mkdir(parents=True, exist_ok=True)
+    run_id, artifacts = reserve_eval_run(run_root, task["id"], args.arm)
 
     env_code = model_code = focused_code = regression_code = regression_baseline_code = 0
     regression_baseline_count = regression_new_failure_count = 0
@@ -621,11 +710,16 @@ def main() -> int:
             regression_baseline_code = baseline_regression["exit_code"]
             if args.arm == "full-loop":
                 model_code, engine_output = run_full_loop(
-                    task, repo, artifacts, config, regression_baseline_count
+                    task, repo, artifacts, config, regression_baseline_count, run_id
                 )
                 (artifacts / "full-loop.txt").write_text(engine_output, encoding="utf-8")
                 review_verdict = parse_review_verdict(engine_output)
                 gate_exit = parse_gate_exit(engine_output)
+                if model_code == 0:
+                    identity_error = engine_run_identity_error(run_id, engine_output)
+                    if identity_error:
+                        infra_error = True
+                        notes = "; ".join(part for part in (notes, identity_error) if part)
             else:
                 model_code, model_output = run_model_arm(task, args.arm, repo, artifacts, config)
                 (artifacts / "model.txt").write_text(model_output, encoding="utf-8")

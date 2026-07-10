@@ -53,6 +53,10 @@ commands and artifact names the repo itself uses, not a paraphrase.
    ```
    Creates `.mentor-loop/runs/<run-id>/` plus a prompt bundle: `mentor-brief-prompt.md`
    and `active-lessons.md` (any standing lessons that apply, injected up front).
+   The ID is collision-resistant by default. A caller may pass `--run-id <id>` for
+   end-to-end correlation, but `init` and `run` reserve it with create-only semantics:
+   an existing directory is a hard failure, never a resume or overwrite. Later stage
+   commands use `--run <run-id>` and require that exact directory to exist.
 
 2. **The mentor (strong model) writes the work order.** *(mentor step — no CLI command)*
    The mentor reads the prompt bundle and writes

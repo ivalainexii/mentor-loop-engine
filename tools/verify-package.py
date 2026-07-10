@@ -489,6 +489,7 @@ def check_codex_native_driver() -> None:
         repo = Path(tmpdir) / "stage repo"
         repo.mkdir()
         subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        requested_run_id = "verifier-stage-run"
         init_result = subprocess.run(
             [
                 sys.executable,
@@ -496,6 +497,8 @@ def check_codex_native_driver() -> None:
                 "init",
                 "--repo",
                 str(repo),
+                "--run-id",
+                requested_run_id,
                 "fix staged smoke bug",
             ],
             cwd=PACKAGE_ROOT,
@@ -510,7 +513,48 @@ def check_codex_native_driver() -> None:
         if not match:
             raise RuntimeError("Codex-native stage init did not print run_id")
         run_id = match.group(1)
+        if run_id != requested_run_id:
+            raise RuntimeError(
+                f"Codex-native stage init changed the requested run_id: expected={requested_run_id}; observed={run_id}"
+            )
         run_dir = repo / ".mentor-loop" / "runs" / run_id
+        task_sentinel = (run_dir / "task.txt").read_bytes()
+        duplicate_result = subprocess.run(
+            [
+                sys.executable,
+                str(driver),
+                "init",
+                "--repo",
+                str(repo),
+                "--run-id",
+                requested_run_id,
+                "different staged smoke bug",
+            ],
+            cwd=PACKAGE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if duplicate_result.returncode == 0 or "already exists" not in duplicate_result.stdout:
+            fail(duplicate_result.stdout.strip())
+            raise RuntimeError("Codex-native stage init did not fail closed on a duplicate run_id")
+        if (run_dir / "task.txt").read_bytes() != task_sentinel:
+            raise RuntimeError("duplicate run_id overwrote existing run evidence")
+        if (run_dir.parent / f"{run_id}-1").exists():
+            raise RuntimeError("duplicate run_id was silently suffixed instead of rejected")
+        missing_run_id = "verifier-missing-run"
+        missing_stage = subprocess.run(
+            [sys.executable, str(driver), "brief-check", "--repo", str(repo), "--run", missing_run_id],
+            cwd=PACKAGE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if missing_stage.returncode == 0 or "run directory does not exist" not in missing_stage.stdout:
+            fail(missing_stage.stdout.strip())
+            raise RuntimeError("Codex-native stage command did not reject a missing run_id")
+        if (run_dir.parent / missing_run_id).exists():
+            raise RuntimeError("missing stage run_id created a ghost run directory")
         (run_dir / "mentor-brief.md").write_text(
             "## Baseline Before Editing\n\nActual output: baseline passed\n\n"
             "## Blast Radius\n\n- app.py\n",

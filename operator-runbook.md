@@ -42,6 +42,18 @@ Before any model edits:
 - Identify at least one broader no-regression check, even if it is only a
   documented limitation.
 
+### Run Identity And Ownership
+
+- Let the engine generate a collision-resistant ID, or pass `--run-id <id>` when an
+  external scheduler needs one identity across its scorecard, artifacts, worktree,
+  and engine report.
+- `init` and one-shot `run` are create-only. If that ID already exists, stop and
+  investigate; the command will not resume, overwrite, delete, or suffix it.
+- Stage commands use `--run <run-id>` to continue a known run. A typo or missing ID
+  fails without creating a ghost directory.
+- Eval artifact and worktree reservations follow the same rule. Identity mismatch
+  between harness and engine is infrastructure failure, not model success.
+
 ### 2. Strong Model Writes The Mentor Brief
 
 Give the strong model:

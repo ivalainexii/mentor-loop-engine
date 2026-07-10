@@ -15,6 +15,7 @@ Covers:
 from __future__ import annotations
 
 import contextlib
+import csv
 import hashlib
 import importlib.util
 import io
@@ -105,6 +106,172 @@ class PackageLessonSeedTests(unittest.TestCase):
         self.assertIn("## active", lessons)
         self.assertNotIn("## retired", lessons)
         self.assertIn("seed_id", lessons)
+
+
+class EvalRunIdentityTests(unittest.TestCase):
+    def test_eval_run_ids_are_unique_in_a_tight_loop(self):
+        run_ids = {runtask.new_eval_run_id() for _ in range(1000)}
+        self.assertEqual(len(run_ids), 1000)
+
+    def test_eval_artifact_reservation_is_create_only(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            first = runtask.reserve_eval_artifacts(root, "task", "full-loop", "run-1")
+            sentinel = first / "sentinel.txt"
+            sentinel.write_text("keep", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "already exists"):
+                runtask.reserve_eval_artifacts(root, "task", "full-loop", "run-1")
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_existing_eval_worktree_is_not_deleted(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            task = {"id": "identity-task", "repo": {"url": "__mock__", "base_ref": "HEAD"}}
+            worktree = root / "identity-task-run-1"
+            worktree.mkdir()
+            sentinel = worktree / "sentinel.txt"
+            sentinel.write_text("keep", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "already exists"):
+                runtask.prepare_repo(task, root, "run-1")
+
+            self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_full_loop_forwards_harness_run_id_to_engine(self):
+        task = {
+            "id": "identity-task",
+            "issue": {"title": "identity", "body": "identity"},
+            "ground_truth": {"issue_url": "mock://identity"},
+            "verification": {"focused": [], "regression": []},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+
+            def fake_verification(_task, _repo, _key, log_path):
+                log_path.write_text("", encoding="utf-8")
+                return 0
+
+            with patch.object(runtask, "run_verification", side_effect=fake_verification):
+                with patch.object(runtask, "run_command", return_value=(0, "- run_id: harness-run-1\n")) as runner:
+                    runtask.run_full_loop(
+                        task,
+                        root,
+                        artifacts,
+                        {"mentor_loop_config": "__mock__"},
+                        0,
+                        "harness-run-1",
+                    )
+
+            command = runner.call_args.args[0]
+
+        self.assertEqual(command[command.index("--run-id") + 1], "harness-run-1")
+
+    def test_engine_run_identity_mismatch_is_explicit(self):
+        self.assertIsNone(runtask.engine_run_identity_error("expected", "- run_id: expected\n"))
+        self.assertIn("observed=other", runtask.engine_run_identity_error("expected", "- run_id: other\n"))
+        self.assertIn("observed=missing", runtask.engine_run_identity_error("expected", "no identity\n"))
+
+    def test_engine_identity_mismatch_is_infra_error_in_scorecard(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            repo.mkdir()
+            task_path = root / "task.json"
+            config_path = root / "config.json"
+            scorecard = root / "scorecard.csv"
+            task_path.write_text(
+                json.dumps(
+                    {
+                        "id": "identity-task",
+                        "repo": {"url": "__mock__", "base_ref": "HEAD"},
+                        "ground_truth": {
+                            "issue_url": "mock://issue",
+                            "fix_pr_url": "mock://pull",
+                            "close_date": "2026-07-09",
+                        },
+                        "issue": {"title": "identity", "body": "identity"},
+                        "verification": {"focused": [], "regression": []},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config_path.write_text("{}\n", encoding="utf-8")
+            regression = {
+                "count": 0,
+                "exit_code": 0,
+                "ids": set(),
+                "parsed_ids": True,
+            }
+            argv = [
+                "run-task.py",
+                "--task",
+                str(task_path),
+                "--arm",
+                "full-loop",
+                "--work-root",
+                str(root / "work"),
+                "--scorecard",
+                str(scorecard),
+                "--config",
+                str(config_path),
+            ]
+            with patch.object(sys, "argv", argv):
+                with patch.object(runtask, "prepare_repo", return_value=repo):
+                    with patch.object(
+                        runtask,
+                        "run_command",
+                        side_effect=[(0, "preflight ok"), (0, " M app.py\n")],
+                    ):
+                        with patch.object(
+                            runtask,
+                            "run_regression",
+                            side_effect=[dict(regression), dict(regression)],
+                        ):
+                            with patch.object(runtask, "run_verification", return_value=0):
+                                with patch.object(
+                                    runtask,
+                                    "run_full_loop",
+                                    return_value=(
+                                        0,
+                                        "- run_id: other-run\n- review_verdict: Approved\n",
+                                    ),
+                                ):
+                                    with contextlib.redirect_stdout(io.StringIO()):
+                                        result = runtask.main()
+
+            with scorecard.open(newline="", encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+
+        self.assertEqual(result, 1)
+        self.assertEqual(row["outcome_type"], "infra_error")
+        self.assertIn("engine run identity mismatch", row["notes"])
+
+    def test_eval_paths_reject_task_id_traversal(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            work_root = root / "work"
+            work_root.mkdir()
+
+            with self.assertRaises(ValueError):
+                runtask.reserve_eval_artifacts(
+                    work_root, "../../outside", "full-loop", "run-1"
+                )
+            with self.assertRaises(ValueError):
+                runtask.prepare_repo(
+                    {
+                        "id": "../outside",
+                        "repo": {"url": "__mock__", "base_ref": "HEAD"},
+                    },
+                    work_root,
+                    "run-1",
+                )
+
+            self.assertFalse((root / "outside").exists())
+            self.assertFalse((root / "outside-run-1").exists())
 
 
 class ClassifyFailClosedGuards(unittest.TestCase):

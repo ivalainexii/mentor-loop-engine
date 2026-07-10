@@ -19,6 +19,17 @@ Invoke `init` first:
 python path\to\mentor-loop-lean-v0\tools\mentor-loop.py init --repo path\to\target-repo "fix <bug description or issue summary>"
 ```
 
+The engine generates a collision-resistant run ID by default. An orchestrator may
+instead supply a safe correlation ID with `--run-id <id>`:
+
+```powershell
+python path\to\mentor-loop-lean-v0\tools\mentor-loop.py init --repo path\to\target-repo --run-id <id> "fix <bug description or issue summary>"
+```
+
+`init` and `run` are create-only: an existing ID is rejected and is never resumed,
+overwritten, or silently suffixed. Only stage commands such as `brief-check --run
+<run-id>` reopen an already-created run directory.
+
 Then the GUI mentor writes:
 
 ```text
@@ -81,6 +92,9 @@ Use this path only for automation dogfood:
 ```powershell
 python path\to\mentor-loop-lean-v0\tools\mentor-loop.py run --repo path\to\target-repo "fix <bug description or issue summary>"
 ```
+
+Automation may pass `--run-id <id>` to correlate its artifacts with the engine run;
+the same create-only collision rule applies.
 
 ## Claude Code One-Command Path
 
