@@ -1,9 +1,16 @@
 # I Tested Whether a Strong Model Could Mentor a Weak Model
 
+> **Archived publication draft (2026-07-10):** retained as a record of the
+> author-run case study, not as an active launch article or product roadmap. The
+> A′ measurement design was falsified; the underlying uplift, cost, and
+> judgment-compounding theses remain unproven, not disproven. Further product-level
+> validation is not being pursued. `README.md` and
+> `docs/aprime-postmortem.md` contain the final disposition.
+
 Subtitle:
 
-> Lessons transferred. Briefs mostly bought auditability. Gates were the real
-> prize.
+> Author-run cases produced inspectable briefs and deterministic gates; they did
+> not establish product-level outcome uplift.
 
 I started with a simple question:
 
@@ -18,27 +25,28 @@ The original shape was obvious:
 4. Strong model reviews the diff.
 5. Any reusable correction becomes a lesson for next time.
 
-That workflow still makes sense. But the experiment changed what I think the
-product is.
+That workflow was useful to inspect. But the research changed how I interpreted
+the prototype.
 
 The interesting result was not "strong model plans, weak model executes."
 
 The interesting result was:
 
-> Judgment can move down a ladder: review -> lesson -> gate.
+> A judgment can be encoded down a ladder: review -> lesson -> gate.
 
-Each step makes the same judgment cheaper, more repeatable, and less dependent
-on the model being brilliant in the moment.
+Once encoded, a deterministic gate can repeat a specific check without relying on
+a model to remember it. The case study did not measure whether the overall workflow
+was cheaper or improved product outcomes.
 
 This is a small case study, not a benchmark. The sample is too small for
-statistical claims. I am publishing it because the failure modes were more
-useful than a clean success story.
+statistical claims. This archived draft is retained because the failure modes are
+useful engineering records, not because the study established the product thesis.
 
 ## TLDR
 
 - I tested a manual "Mentor Loop" workflow on public coding tasks.
-- The strongest signal was same-repo lesson transfer: a lesson from `jc-685`
-  helped weak-model runs on the related `jc-687` task.
+- A tiny, confounded same-repo case recorded accepted lesson-seeded runs after
+  `jc-685` on the related `jc-687` task; it cannot establish causal transfer.
 - Mentor Briefs did not show clear success-rate lift over lessons-only in the
   small `jc-687` ablation.
 - Mentor Briefs did improve auditability: baseline, reproduction, context read,
@@ -52,8 +60,8 @@ useful than a clean success story.
   credits same-file familiarity and easier tasks ahead of the process itself.
 - The process caught strong-model mistakes too; this is not only weak-model
   babysitting.
-- The product direction is not a model router. It is a judgment distillation
-  machine.
+- The historical design interpretation favored judgment artifacts over a model
+  router. It is not an active product roadmap.
 
 ## What I Built
 
@@ -126,7 +134,8 @@ The brief made it easier to see whether the model had:
 - stayed inside the blast radius,
 - and given the reviewer enough evidence to judge the patch.
 
-That is valuable. It just changes the product claim.
+That made the runs easier to inspect. It does not establish a product outcome
+claim.
 
 Mentor Briefs are not primarily "make weak models smarter" artifacts. They are
 audit artifacts. They make model work easier to inspect, reproduce, and block.
@@ -187,15 +196,15 @@ That is the next step down the ladder:
 ```text
 review/gate missed a class of artifact drift
   -> gate got stronger
-  -> future checks are free
+  -> later checks are deterministic
 ```
 
-This is the mechanism I now care about:
+This is the reusable engineering sequence the cases produced:
 
 ```text
 review catches mistake
   -> lesson prevents repeat
-    -> gate makes it free
+    -> gate repeats a specific check mechanically
 ```
 
 ## The pflow Boundary Run
@@ -230,18 +239,19 @@ That matters. A plausible patch is not an accepted patch.
 The pflow result says only this:
 
 - Cross-repo lesson transfer did not produce a measurable success-rate lift.
-- The meta lesson transferred conceptually: both lessons-only runs explicitly
-  applied "preserve nested parser context before checking surface syntax."
-- Repo-level lessons remain the real product claim.
+- Both lessons-only prompts referenced "preserve nested parser context before
+  checking surface syntax," but verification never established an accepted result.
+- Neither the same-repo nor cross-repo observations establish a product-level
+  lesson-transfer claim.
 
-## What Live Dogfooding Added
+## Historical Author-Run Dogfooding Notes
 
 The next day of use changed the story again.
 
-Across ten runs on three codebases - a Python library, an Electron and
-Playwright app, and a Google Apps Script - the loop stopped looking like a way
-to babysit weak models and started looking like a way to discipline all model
-work.
+Across ten author-run cases on three codebases — one public library and two
+private application contexts — the artifacts also exposed mistakes made by
+strong models. This is an anecdotal engineering observation, not an independent
+product result.
 
 First, the strong model's context bill shrank too - but the honest
 decomposition matters more than the headline. The drop was visible on the
@@ -276,14 +286,12 @@ That matters because it reframes the product. Gates and protocols are not
 "weak-model training wheels." They are ways to make model judgment inspectable
 even when the model is strong.
 
-Third, the loop handled a regression the way real engineering handles
-regressions: not by preventing every mistake, but by making the next step
-cheaper. One run introduced a permanent slowdown in an account refresh path:
-dormant accounts never advanced their windows, so every later run kept
-rescanning from ancient dates. The user diagnosed the root cause from observed
-behavior. A later run clamped the window to `max(latest, today - 5)` and added a
-human-visible "clamped from" annotation. Runtime moved back toward the prior
-range, and validation time dropped sharply. The important arc was:
+Third, one private-application run introduced a persistent slowdown in an
+incremental refresh path. The user diagnosed the root cause from observed
+behavior, and a later run bounded the refresh window and added a human-visible
+annotation. Runtime moved back toward the prior range. This private anecdote is
+retained only at the mechanism level; it is not independently reproducible
+evidence. The recorded arc was:
 
 ```text
 mentor design flaw
@@ -293,23 +301,22 @@ mentor design flaw
   -> quantitative acceptance
 ```
 
-The loop's value is not "no mistakes." It is that mistakes leave artifacts that
-make correction cheaper.
+The artifacts made this correction traceable. The case does not establish a
+general cost or reliability advantage.
 
 Fourth, some tasks need design briefs, not just repair briefs. For "find the
 optimal logic" work, the mentor should make the design decisions explicitly in
 the brief and number them. The apprentice should implement those decisions, not
 invent the strategy. A useful scope rule emerged: existing behavior with
-invariants to protect belongs in the loop with a design brief; greenfield build
-mode is future work.
+invariants to protect belonged in the prototype with a design brief; greenfield
+build mode was outside its historical scope.
 
-Fifth, verification is not one thing. Three regimes showed up in one day:
-fully automatic verification for a Python library with tests, human-in-the-loop
-verification for real bank portals where screenshots were decisive evidence,
-and paste-and-run verification for Apps Script, where syntax checking was the
-machine gate and timing columns were the acceptance evidence. The brief's job
-is to choose the regime honestly, and the apprentice must say "I cannot verify
-this here" instead of manufacturing proof.
+Fifth, verification is not one thing. Three regimes appeared in the author-run
+cases: automatic tests, human review of a private browser-based workflow, and a
+paste-and-run environment with machine syntax checks plus application-provided
+measurements. Private services, account details, and screenshots are not part of
+this public repository. The durable rule is to state the verification boundary
+and say "I cannot verify this here" instead of manufacturing proof.
 
 ## Why the Lesson File Needs Depreciation
 
@@ -320,7 +327,7 @@ It is preventing the lesson file from rotting.
 Anyone who has used a big `CLAUDE.md` or `AGENTS.md` has seen this failure
 mode: stale rules, duplicated warnings, contradictions, and context bloat.
 
-So v1 lessons need depreciation built in.
+An archived v1 proposal therefore included lesson depreciation.
 
 Every lesson should carry metadata:
 
@@ -330,14 +337,14 @@ Every lesson should carry metadata:
 - last hit date,
 - status: active, candidate gate, retired.
 
-Then every week or every N runs, run consolidation:
+Under that archived proposal, a periodic consolidation would:
 
 - merge duplicates,
 - delete stale or contradictory rules,
 - promote repeatedly-hit lessons into gate candidates,
 - keep only rules that still change model behavior.
 
-When the execution model upgrades, run a retirement audit:
+After an execution-model change, that proposal would run a retirement audit:
 
 - disable a sample of older lessons,
 - rerun representative tasks,
@@ -348,15 +355,17 @@ The asset is not "a long prompt."
 
 The asset is a judgment balance sheet that gets reconciled.
 
-## What I Think This Proves
+## What The Author-Run Cases Observed
 
-This case study supports modest claims:
+These observations are bounded to the recorded cases and do not establish causal
+product benefit:
 
-- Same-repo lessons can transfer across related tasks.
-- Strong review catches failures focused tests can miss.
-- Real failures can improve deterministic gates.
-- Mentor Briefs are useful audit artifacts.
-- Weak models can produce strong-looking patches when judgment is externalized.
+- A tiny same-repo sequence produced accepted lesson-seeded runs, with confounds.
+- Review caught failures that the focused tests in those runs missed.
+- Specific observed failures were encoded into deterministic gates.
+- Mentor Briefs made required inputs and evidence more inspectable.
+- Narrow patches were produced under tightly specified prompts; this is not a
+  general weak-versus-strong model result.
 
 ## What It Does Not Prove
 
@@ -402,13 +411,13 @@ in forms it can actually use:
 
 The goal is not to make weak models magical.
 
-The goal is to make strong-model judgment durable enough that weak models can
-reuse it.
+The historical design goal was to make selected judgments explicit and reusable.
+The study did not prove that doing so improves weak-model outcomes.
 
-## Current Rule
+## Final Disposition
 
-Do not build more framework.
-
-Publish the case study first.
-
-If the data resonates, automate the smallest painful part.
+The prototype and its evidence are preserved, but there is no active publication-
+then-automation plan. The A′ measurement design was falsified; the underlying
+thesis remains unproven, not disproven. Further product-level validation is not
+being pursued. Any restart would require an explicit owner decision and a new
+measurement contract.

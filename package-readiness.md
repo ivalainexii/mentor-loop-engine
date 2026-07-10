@@ -1,10 +1,11 @@
 # Package Readiness
 
-Current status:
+Archive status (2026-07-10):
 
-> Ready to publish as a case study, ready to dogfood manually, and wired for a
-> Codex-native `mentor-loop <task>` dogfood run. Claude Code is a later
-> distribution path.
+> Preserved research prototype with a mechanically verified package surface.
+> Historical publication and dogfood checklists remain for reproducibility, but
+> they are not an active release plan. Further product-level validation is not
+> being pursued. `README.md` is the current claim source of truth.
 
 Not ready to claim:
 
@@ -19,7 +20,7 @@ For the Codex-native target, not ready to claim:
 
 > `mentor-loop <task>` has completed a live real-repo bug fix end-to-end.
 
-## Ready
+## Preserved Artifacts
 
 Publication assets:
 
@@ -101,41 +102,43 @@ manual v0:
 
 | Goal layer | Current evidence/artifact | Status |
 |---|---|---|
-| Markdown workflow | `quickstart.md`, `operator-runbook.md`, templates | Ready for manual dogfood. |
-| Context discipline | `repo-context-template.md`, Context Pack in `mentor-brief-template.md` | Ready as usage discipline. |
-| Strong planning, weak execution | `model-policy.md`, `role-cards.md`, `mentor-brief-template.md`, `apprentice-execute.md` | Ready manually; not automated. |
-| Environment feedback | `gates/blast-radius-check.py`, `gates/runtime-floor-check.py`, verification sections, scorecards | Ready for scope gate and narrow Python runtime-floor checks; broader semantic gates remain future work. |
-| Cheap trial | `best-of-n-rubric.md` | Ready as manual selection protocol; cost claim unmeasured. |
-| Fresh review | `mentor-review-template.md`, `role-cards.md` | Ready manually; supported by case-study evidence. |
-| Templates and examples | `lesson-ledger-example.md`, brief/review/lesson templates | Ready as few-shot guidance. |
-| Durable lessons | `lesson-capture-template.md`, `lesson-ledger-example.md`, `future/lesson-ledger-v1.md` | v0 ready manually; v1 ledger not implemented. |
+| Markdown workflow | `quickstart.md`, `operator-runbook.md`, templates | Manual replay documents preserved; not product-validated. |
+| Context discipline | `repo-context-template.md`, Context Pack in `mentor-brief-template.md` | Usage-discipline artifacts preserved. |
+| Strong planning, weak execution | `model-policy.md`, `role-cards.md`, `mentor-brief-template.md`, `apprentice-execute.md` | Manually specified; not automated or outcome-validated. |
+| Environment feedback | `gates/blast-radius-check.py`, `gates/runtime-floor-check.py`, verification sections, scorecards | Scope and narrow Python runtime-floor checks are tested; broader semantic gates were not built. |
+| Cheap trial | `best-of-n-rubric.md` | Manual selection protocol preserved; cost claim unmeasured. |
+| Fresh review | `mentor-review-template.md`, `role-cards.md` | Manual review artifact preserved; evidence is limited to author-run cases. |
+| Templates and examples | `lesson-ledger-example.md`, brief/review/lesson templates | Few-shot examples preserved. |
+| Durable lessons | `lesson-capture-template.md`, `lesson-ledger-example.md`, `future/lesson-ledger-v1.md` | Manual template preserved; v1 ledger not implemented. |
 | Hook | `gates/blast-radius-check.py`, `gates/runtime-floor-check.py`, `hooks/pre-commit.sample` | Working gates plus manual sample hook; no installer. |
 | Skill/subagent path | `integration-map.md`, `role-cards.md`, `subagents/*.md`, `skills/*/SKILL.md`, `future/lesson-ledger-v1.md` | Manual prompt cards and skill-shaped wrappers included; not auto-installed automation. |
 | Claude Code one-command path | `.claude/skills/mentor-loop/SKILL.md`, `.claude/agents/mentor-loop-apprentice.md`, bundled templates/gates | Wired as a Claude Code project skill; live end-to-end bug-fix run still required. |
 | Stage engine path | `tools/mentor-loop.py`, `mentor-loop.config.json`, `codex-cli-verified-flags.md` | Wired as a GUI-drivable stage engine; stage smoke verified; live real bug-fix run still required. |
 
-This satisfies:
+The preserved package mechanically provides:
 
-> A manual, evidence-backed workflow that splits judgment, execution, gates,
-> review, and lessons so weaker models can do narrower work with stronger
-> guardrails.
+> A manual workflow that splits judgment, execution, gates, review, and lessons,
+> with tested deterministic mechanisms and author-run case-study artifacts.
 
 It does not yet satisfy:
 
 > A fully automated skill/hook/subagent product that makes weak-model work feel
 > indistinguishable from outsourcing everything to the strongest model.
 
-## Proven Enough To Say
+## Observed In Author-Run Cases (Not Product Proof)
 
-- Same-repo lessons transferred in a small related-task case study.
-- Mentor Briefs improved auditability more clearly than success rate.
+- In a tiny, confounded same-repo case, accepted lesson-seeded runs followed an
+  earlier related task; this does not establish causal lesson transfer.
+- Mentor Briefs made baseline, repro, context, stop conditions, and review inputs
+  more inspectable; success-rate lift remains unproven.
 - Strong review caught failures that focused tests missed.
 - A real protocol failure improved the blast-radius gate.
 - A real runtime-floor failure produced a narrow Python compatibility gate.
 - Lesson decay needs to be part of v1 design.
 - All seven weak-model failure modes have a corresponding v0 artifact in
   `lever-map.md`.
-- The useful mechanism is `review -> lesson -> gate`.
+- The cases produced the reusable engineering sequence `review -> lesson -> gate`;
+  they did not establish a general outcome benefit.
 
 ## Not Proven
 
@@ -161,9 +164,10 @@ It does not yet satisfy:
   `uv`, `pytest`, and `PyYAML`.
 - Token counts were unavailable, so cost ratio is unmeasured.
 
-## Release Gate
+## Historical Publication Checklist (Archived)
 
-Before publishing:
+The following was the pre-closeout checklist. It is retained for reproducibility,
+not as a current instruction to publish:
 
 - Verify `START_HERE.md` points to the right files.
 - Verify `publication-assets.md` includes explicit `Do Not Claim` guardrails.
@@ -217,42 +221,31 @@ Current release gate status:
 - Codex desktop sandbox still cannot execute `codex --version`; it returns
   `Access is denied`.
 
-## Next Work
+## Archived Restart Conditions
 
-Do next:
+There is no active "next work" list. Only if an owner explicitly reopens this
+research should a new measurement contract precede any live dogfood, publication
+claim, or automation decision. At minimum, a restart would need an independent
+baseline, product-level outcome definition, cost/accounting method, and explicit
+authority for the target repository and data.
 
-1. Dogfood the stage sequence on one real bug from the interactive GUI
-   workflow: `init`, GUI-written brief, `brief-check`, `apprentice`, `gates`,
-   `snapshot`, GUI-written review, `capture-lesson`, `report`.
-2. Inspect `.mentor-loop/runs/<run-id>/` for missing artifacts or ambiguous
-   prompts.
-3. Fix only wiring/template ambiguity discovered by that run.
-4. Then publish or share the stage-engine dogfood report.
-
-Do not do next:
-
-- Add router.
-- Add provider registry.
-- Add launcher.
-- Add bundle builder.
-- Add e2e harness.
-- Claim live `/mentor-loop` support before a real Claude Code run proves it.
-- Build a router, provider registry, generic adapter layer, or Claude Code port
-  before the Codex-native driver is live-proven.
-
-The next product decision should come from either publication feedback or one
-manual dogfood pain repeated at least twice.
+Without that decision, do not add a router, provider registry, launcher, bundle
+builder, e2e harness, or new product claims. Evidence-backed defects in preserved
+mechanisms and deliberate component reuse remain in scope.
 
 ## Completion Boundary
 
-This package has achieved:
+This preserved package has mechanically achieved:
 
-> A lean, evidence-backed, manually operable v0 for judgment distillation, plus
-> Claude Code `/mentor-loop` wiring ready for live dogfood.
+> A lean, manually operable v0 with tested gates, stage wiring, and an artifact
+> trail, plus historical author-run case-study records.
 
 It has not achieved:
 
 > A live-proven one-command system that makes weak models indistinguishable
 > from strong models.
 
-That distinction should stay visible in every public description.
+The A′ measurement design was falsified; the underlying uplift, cost, and
+judgment-compounding theses remain unproven, not disproven. Further product-level
+validation is not pursued. That distinction should stay visible in every public
+description.

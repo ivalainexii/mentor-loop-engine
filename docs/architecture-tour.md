@@ -136,7 +136,7 @@ memory:
   `test_architect_loop.py`, `test_blast_radius_check.py`, `test_brief_honesty.py`,
   `test_brief_review.py`, `test_failure_loop.py`, `test_review_verification.py`, and
   `test_runtime_floor_check.py` — run via `python -m unittest discover -s tests`.
-  `README.md` states 166 tests pass this way and that the package self-check
+  `README.md` states 206 tests pass this way and that the package self-check
   (`python tools/verify-package.py`) is also green.
 - **The postmortem exists and says what it says.** `docs/aprime-postmortem.md`
   documents a preregistered experiment on the compounding-judgment thesis: an
@@ -144,26 +144,30 @@ memory:
   ("correction rounds per accepted task") turned out to be one the single-pass
   harness could not produce at all — caught by two independent adjudications that
   converged on the same finding by different paths. The experiment was closed as
-  **uninformative** (zero evidence in either direction), and a redesigned successor
-  metric is described in the same document.
+  **uninformative** (zero evidence in either direction). The same document describes
+  an incomplete successor attempt that is now archived, not awaiting resumption.
 - **The honest-status split is the README's own framing, not this document's.**
-  `README.md`'s "Honest status: a working tool vs. an open research claim" section
+  `README.md`'s "Honest status: a working tool and a closed research program" section
   separates what's established (the loop runs end-to-end and produces the full
   artifact set; the gates are real deterministic code exercised by tests; the guard /
   escalation / architect-loop / failure-review round-trips behave as specified) from
-  what's still open (the compounding claim itself).
+  the final research disposition (the A′ measurement design was falsified; the
+  underlying thesis remains unproven, not disproven).
 
 ## Honest boundaries
 
 Carried over from `README.md` without upgrading any of it (that section — "Honest
-status: a working tool vs. an open research claim" — is the authoritative copy):
+status: a working tool and a closed research program" — is the authoritative copy):
 
-- **The compounding claim is a pre-registered, open measurement — not a finding.**
-  It has not cleanly fallen yet.
+- **The A′ measurement design was falsified.** The single-pass instrument could not
+  emit its registered correction-round metric.
+- **The underlying compounding thesis remains unproven, not disproven.** The invalid
+  design produced zero evidence in either direction, and further product-level
+  validation is not pursued.
 - **Recent zero-correction datapoints are weak**: the apprentice's slice was nearly
   fully specified from the author's own validated run, not an independent execution.
 - **All datapoints are author-run** — no baseline comparison (cheap-model-alone vs.
   full-loop) and no independent third-party run of this engine, including no
   third-party cold start.
-- **No cost measurement yet.** Treat this as discipline tooling and a case study, not
+- **No trustworthy cost measurement.** Treat this as discipline tooling and a case study, not
   cost arbitrage.

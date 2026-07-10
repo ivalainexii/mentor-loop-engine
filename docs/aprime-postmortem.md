@@ -1,4 +1,4 @@
-# We Preregistered an Experiment to Prove Our Method Works. The Instrument Couldn't Measure It.
+# We Preregistered an Experiment. The Instrument Couldn't Measure Its Claim.
 
 *2026-07-08*
 
@@ -10,8 +10,15 @@ decisions and mistakes, fed back into future work, makes the model make fewer
 mistakes over time.
 
 Nice story. We wanted to know if it was true, so we preregistered an experiment to
-test it. This is why that experiment couldn't answer the question we asked it, how we
-caught that, and what we're doing instead.
+test it. This is why that experiment couldn't answer the question we asked, how we
+caught that, and why the research line was later closed.
+
+> **Archive note (2026-07-10):** this is a historical postmortem, not an active
+> experiment announcement. The A′ measurement design was falsified because
+> the instrument could not emit its registered metric. The underlying judgment-
+> compounding thesis remains unproven, not disproven, and further product-level
+> validation is not being pursued. Where the narrative below describes a successor
+> design, read it as an archived attempt rather than a promise of future results.
 
 ## Why we preregistered before running anything
 
@@ -28,8 +35,10 @@ another anecdote.
 So before running anything we wrote down the exact metric, the two arms, the task
 set, and the win/loss/null decision rule — plus three standing prohibitions: no
 adding a third arm mid-run, no padding the sample size to chase significance, no
-placebo arm in this first pass. We capped the budget up front too: roughly $25 for a
-plumbing-only pilot, roughly $120 for the full run if the pilot came back clean.
+placebo arm in this first pass. We also separated a small plumbing pilot from any
+larger run so an invalid instrument would be detected before a full batch. The
+records do not support a reliable dollar-cost comparison, so this postmortem does
+not attach dollar claims to either phase.
 
 The registered metric: **correction rounds per accepted task** — how many times a task
 got kicked back for rework before it was accepted. Two arms: **L+** (real ledger
@@ -144,35 +153,28 @@ Stated the way our own rules require: the compounding-judgment thesis remains
 it. The instrument that was supposed to measure the effect couldn't, full stop — a
 ceiling-effect result and an absence-of-evidence result look identical from outside.
 
-We're not calling this a failure of the method we're building — it's a failure of
-one measurement design, caught before it cost us anything close to the full budget.
-The $120 full-run budget was never touched. The pilot, budgeted at roughly $25, did
-exactly what a pilot should: found the structural bug before an expensive run could
-walk into the same wall at several times the cost.
+We're not calling this a failure of the underlying thesis — it is a failure of one
+measurement design. The pilot did what a plumbing pilot should: it exposed the
+structural problem before a larger batch reused the same invalid instrument. This
+is a scope-control result, not evidence of cost savings.
 
-## The redesign
+## The archived successor design
 
 We didn't patch the old metric. Preregistration only works if "the metric can't be
-measured" triggers a new experiment, not a quietly loosened old one. The
-independently preregistered successor changes three things: a new primary metric
+measured" triggers a new experiment, not a quietly loosened old one. A separately
+preregistered successor design changed three things: a new primary metric
 (first-pass review approval rate per task, a number our single-pass harness can
 actually produce); a weaker, more error-prone apprentice tier with a documented
 non-zero baseline failure rate, so there's room for a ledger to move the number
 either way; and arm labels written directly into the scorecard's data columns, not
-reconstructed after the fact from which working directory had a ledger file. We'll
-report direction and raw counts only — no p-values on an n of ten.
+reconstructed after the fact from which working directory had a ledger file. It
+would have reported direction and raw counts only — no p-values on an n of ten.
 
-That successor batch launched against a fixed monthly subscription quota rather than
-per-call billing — roughly zero marginal dollar cost per run. It reached run 2 of 20 (ten tasks × two arms)
-before hitting an external wall: the monthly quota ran dry mid-batch. The run is
-suspended, the two in-flight rows are voided — the quota wall hit before the mentor
-model attempted a single brief, so those rows carry no signal about the ledger
-question and don't count against the one-run-per-task-per-arm budget — and the batch
-resumes where it left off once quota resets. Nothing was spent and nothing was lost;
-we won't pretend it isn't still a slightly absurd way for a rigorous preregistered
-experiment to pause — first the ruler was broken, now the whole thing is waiting on a
-quota meter. Preregistration doesn't stop the universe from having a sense of humor
-about timing.
+The successor attempt reached two scheduled rows before a subscription quota stopped
+the batch. Both rows were voided before the mentor attempted a brief, so they carry no
+signal about the ledger question. The batch did not resume and is now archived with
+the rest of the research program. A subscription quota is a capacity constraint, not
+evidence of zero marginal cost, so no dollar or cost-advantage conclusion is drawn.
 
 ## Practitioner lessons
 
@@ -198,22 +200,20 @@ Five things we wish we'd checked before locking the design:
    files as prose instead of the expected parseable format. Fix the input to conform
    to spec; a gate that can be talked past isn't a gate.
 
-5. **Preregistration discipline is what made this failure cheap.** Because we wrote
-   the win/loss/null rules down before running anything, and capped the pilot budget
-   separately from the full-run budget, we found the problem for the cost of eleven
-   pilot runs, not the full batch. The discipline didn't prevent the mistake —
-   it capped the price of finding it.
+5. **Preregistration discipline bounded the invalid run.** Because we wrote the
+   win/loss/null rules down before running anything and separated the plumbing pilot
+   from the full batch, the design flaw was found after the pilot rather than after a
+   completed batch. The records establish bounded exposure, not a dollar saving.
 
 ## Where this leaves us
 
-The thesis that judgment compounds through a decisions ledger is still unproven. We
-have zero evidence either way from this round. What we do have is a cleaner
-instrument, a narrower and more honest version of the claim we're testing (priming a
-model with prior context on unfamiliar code, not compounding across projects), and a
-batch that's stalled at the start of a rerun — on pause, waiting for a quota meter to
-refill. We'll report back with real numbers once it finishes. If it comes back null
-again, we'll say so.
+The thesis that judgment compounds through a decisions ledger is still unproven,
+not disproven. This round produced zero evidence either way. A successor instrument
+was designed, but its incomplete rows produced no usable evidence and the batch is
+archived rather than paused. Further product-level validation is not being pursued;
+there is no pending result or promised follow-up. Reopening the question would
+require an explicit new decision and measurement contract.
 
 The mentor-loop harness is public:
 [github.com/ivalainexii/mentor-loop-engine](https://github.com/ivalainexii/mentor-loop-engine).
-(The decision ledger it reads from stays local — publishing that is a separate call.)
+(The private decision ledger is not part of this public repository.)

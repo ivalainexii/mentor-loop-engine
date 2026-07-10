@@ -1,10 +1,15 @@
 # Writeup Addenda — evening of 2026-06-11 (fold into writeup-draft.md)
 
-From the mentor session, after a full day of live dogfooding (10 runs across
-3 codebases: a Python library, an Electron+Playwright app, a Google Apps
-Script). These are findings the current draft predates.
+> **Archived private-session notes:** retained only to explain how the historical
+> draft evolved. These are author observations, not independent product evidence.
+> Private service names, account details, screenshots, and local paths are omitted.
+> `README.md` controls current claims.
 
-## 1. Discipline cuts the STRONG model's context bill too
+From the mentor session, after a full day of author-run dogfooding (10 runs
+across one public library and two private application contexts). These notes
+predate the final research closeout.
+
+## 1. An author-observed drop in strong-model context use
 
 Observation (NOT yet evidence — state it honestly or not at all): the user
 noticed the mentor's token burn drop over the day. Decomposed honestly, the
@@ -17,10 +22,12 @@ causes rank:
 2. Easier tasks: #7-#10 were delete-a-function / add-a-clamp / flip-an-
    operator edits; briefs could point at exact lines. The afternoon TDCA work
    was multi-path UI diagnosis, intrinsically context-heavy.
-3. Process overhead reduction (real but smallest): template reuse, artifacts
-   in files instead of in-conversation, one-line fix orders. This saves
-   EXPRESSION and TRANSPORT cost, not judgment cost.
-Plus deliberately shorter replies (output is 5x input price).
+3. Process-overhead factors (smallest and not isolated): template reuse,
+   artifacts in files instead of in-conversation, and one-line fix orders may
+   have reduced expression and transport work. No comparable token or cost
+   baseline exists, so this is not a measured cost advantage.
+Replies were deliberately shorter too, which further confounds any token-use
+comparison.
 The genuine "ledger compounds" claim belongs to CROSS-TASK eval data (lessons
 help the NEXT different task; a gate saves a whole execute round), NOT to this
 single-file evening. Do not sell the evening anecdote as proof of compounding
@@ -46,15 +53,15 @@ Worth a section — the gates/protocol are not weak-model babysitting:
 
 ## 3. A regression introduced, diagnosed, and fixed inside the loop
 
-Run #8 (per-tab incremental refresh) introduced a permanent slowdown:
-dormant accounts' windows never advance, so every run re-scans from their
-ancient latest date (40/47s → 69/80s). The USER diagnosed the root cause
-from observed behavior; run #10 clamped the window to max(latest, today-5)
-with a human-visible "clamped from" annotation (→ 48/61s, validation 14→5s).
+Run #8 (incremental refresh) introduced a persistent slowdown: inactive
+records' windows did not advance, so later runs repeatedly scanned old ranges.
+The user diagnosed the root cause from observed behavior; run #10 bounded the
+window and added a human-visible annotation, returning runtime toward the prior
+range.
 Full arc: design flaw by the mentor → field data → user diagnosis →
-evidence-pinned fix → quantitative acceptance. The loop's value is not
-"no mistakes"; it is that every mistake left artifacts that made the next
-step cheap.
+evidence-pinned fix → application-provided acceptance. The artifacts made the
+correction traceable; these records do not establish that the correction or the
+overall workflow was cheaper.
 
 ## 4. Design-type briefs
 
@@ -67,9 +74,10 @@ loop with a design brief; greenfield → out of scope (build mode, future).
 
 ## 5. Verification-tier taxonomy held up
 
-Three verification regimes all worked in one day: full-automatic (Python
-library with test suite), human-in-the-loop (real bank portals, screenshots
-as decisive evidence), and paste-and-run (Apps Script — syntax check is the
-only machine gate; quantitative acceptance via the script's own timing
-columns). The brief's job is to pick the regime honestly, and the apprentice
-must say "I cannot verify this here" rather than claim proof.
+Three verification regimes appeared in one day: full-automatic (a public
+library with tests), human-in-the-loop (a private browser-based workflow), and
+paste-and-run (a private scripting environment with syntax checks and
+application-provided measurements). Private services, data, and screenshots
+are not part of this public record. The durable lesson is to identify the
+verification boundary and say "I cannot verify this here" rather than claim
+proof.

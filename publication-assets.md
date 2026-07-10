@@ -1,13 +1,19 @@
 # Publication Assets
 
-Use these after the writeup has a public URL. Keep the evidence modest: this is
-a case study, not a benchmark.
+> **Archived drafts (2026-07-10):** do not treat this file as an active launch
+> checklist. It preserves proposed posts from an author-run case study. The A′
+> measurement design was falsified; the underlying thesis remains unproven, not
+> disproven; further product-level validation is not pursued. `README.md` controls
+> current claims.
+
+These drafts may be reviewed as historical material. They require fresh approval
+and fact-checking before any reuse.
 
 ## One-Line Positioning
 
-I tested a "strong model mentors weak model" coding workflow. The surprising
-result: briefs mostly bought auditability; the durable leverage came from
-lessons and gates.
+I tested a "strong model mentors weak model" coding workflow. Author-run cases
+produced inspectable briefs and deterministic gates, but did not establish
+product-level uplift, cost advantage, or judgment compounding.
 
 ## Do Not Claim
 
@@ -17,13 +23,14 @@ lessons and gates.
 - Do not claim Mentor Briefs alone improved success rate.
 - Do not claim this is a general agent framework.
 
-## Safe Claims
+## Bounded Historical Observations
 
-- Same-repo lessons transferred across related parser tasks in the `jc` repo.
+- A tiny, confounded same-repo sequence produced accepted lesson-seeded runs; it
+  does not establish causal transfer.
 - Strong review caught a runtime compatibility issue that focused tests missed.
 - A real protocol failure improved the deterministic blast-radius gate.
-- Mentor Briefs improved auditability: baseline, repro, context, stop
-  conditions, and reviewer visibility.
+- Mentor Briefs made baseline, repro, context, stop conditions, and reviewer
+  inputs more inspectable.
 - `pflow-389` was a verification-incomplete boundary run, not an accepted
   success.
 
@@ -36,7 +43,7 @@ Recommended:
 Alternates:
 
 - Strong model mentors weak model: a small coding-agent case study
-- Lessons transferred, briefs bought auditability
+- A tiny lesson-seeded case and more inspectable briefs
 - I tried to make weak coding models behave more like strong ones
 - Judgment distillation for coding agents
 - How to stop your CLAUDE.md from rotting
@@ -66,7 +73,7 @@ better. In the small `jc-687` ablation, lessons-only and lessons-plus-brief
 both went 2/2. The Mentor Brief mostly bought auditability: baseline, repro,
 context read, stop conditions, and reviewer visibility.
 
-The stronger mechanism was:
+The reusable engineering sequence was:
 
 `review -> lesson -> gate`
 
@@ -82,14 +89,15 @@ This is not a benchmark. n is tiny, cost ratio is unmeasured, and one pflow
 boundary run is verification-incomplete because the environment lacked
 `uv`/`pytest`/`PyYAML`.
 
-But the product insight feels real: the durable asset is not a smarter model
-router. It is a judgment distillation loop for coding agents.
+The cases motivated a design hypothesis: encode selected review findings into
+lessons and deterministic gates. They did not establish a product result.
 
 The part I now think deserves more attention is lesson rot. If lessons only
 accumulate, they become another stale `CLAUDE.md`: duplicated warnings, old
 model workarounds, contradictions, and context bloat.
 
-So v1 should treat lessons like a judgment asset ledger: each lesson has a
+An archived v1 proposal would have treated lessons like a judgment asset ledger:
+each lesson has a
 source failure, hit count, last-hit date, and status. Repeated hits get promoted
 into gates. Stale rules get retired when a newer model no longer needs them.
 
@@ -103,7 +111,7 @@ The surprising answer:
 
 Briefs mostly bought auditability.
 
-The real leverage came from lessons + gates.
+Specific failures became lessons + gates.
 
 2.
 
@@ -164,7 +172,7 @@ One failure became a permanent check.
 
 7.
 
-That changed the product frame for me.
+That changed the author's historical design frame.
 
 It is not "a model router."
 
@@ -196,23 +204,24 @@ What this does NOT prove:
 - cross-repo transfer
 - Mentor Briefs alone improving success rate
 
-What it supports:
+What the records support:
 
-same-repo lessons + gates can make weak-model work more disciplined.
+specific author-observed failures were encoded into lessons and gates. They do not
+show a causal weak-model outcome benefit.
 
 10.
 
-My current framing:
+The historical framing was:
 
 judgment distillation for coding agents
 
 review catches mistake
 lesson prevents repeat
-gate makes it cheap forever
+gate repeats a specific check mechanically
 
 11.
 
-The v1 question is not "how do I capture more lessons?"
+The archived v1 question was not "how do I capture more lessons?"
 
 It is:
 
@@ -246,7 +255,7 @@ lessons-only and lessons-plus-brief both succeeded. The brief made it easier to
 inspect the run: baseline, repro, context read, stop conditions, and review
 evidence.
 
-The real mechanism was `review -> lesson -> gate`.
+The reusable engineering sequence was `review -> lesson -> gate`.
 
 Example 1: a weak run passed focused tests but used a Python API newer than the
 project's supported runtime. Strong review caught it. That became a lesson:
@@ -263,17 +272,18 @@ Important caveats:
 - Cost ratio is unmeasured.
 - Cross-repo transfer is not proven.
 
-The product idea I am left with is not a model router. It is a judgment
-distillation loop: move judgment from strong review into lessons, then from
-lessons into deterministic gates.
+The cases motivated a design hypothesis rather than a product claim: move selected
+review findings into lessons, then encode repeated findings into deterministic
+gates.
 
 The maintenance problem matters as much as capture. A lesson file that only
-grows becomes a stale `CLAUDE.md`. The next version needs metadata, hit counts,
-consolidation, and retirement audits so old model workarounds can disappear.
+grows becomes a stale `CLAUDE.md`. The archived next-version proposal specified
+metadata, hit counts, consolidation, and retirement audits.
 
-## Launch Checklist
+## Archived Launch Checklist — Do Not Execute Without A New Decision
 
-- Publish `writeup-draft.md` as the canonical article.
+- Re-check `writeup-draft.md` against the current README before any separately
+  approved publication.
 - Link raw CSVs:
   - `experiments/jc-685-live-results.csv`
   - `experiments/jc-687-ablation-results.csv`

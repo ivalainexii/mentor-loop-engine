@@ -1,24 +1,27 @@
 # Weak-Model Failure Lever Map
 
+> **Archived design map (2026-07-10):** this maps an original hypothesis to
+> preserved artifacts; it is not evidence that the hypothesis worked or an active
+> v1 roadmap. `README.md` controls current claims.
+
 This map connects the original product thesis to the actual package artifacts.
 
-The core idea:
+The original hypothesis:
 
-> Weak models lack judgment. Turn judgment into artifacts, gates, examples, and
-> review loops, and weak models can approach stronger-model behavior on repeated
-> work.
+> Making selected judgments explicit in artifacts, gates, examples, and review
+> loops may improve weak-model work on repeated tasks.
 
 ## Coverage Table
 
-| Weak-model failure | Lever | v0 artifact | Product potential | Evidence status |
+| Weak-model failure | Lever | v0 artifact | Original rationale | Evidence status |
 |---|---|---|---|---|
 | Missing context | Repo context, Context Pack, and mandatory pre-read | `repo-context-template.md`, `mentor-brief-template.md`, `apprentice-execute.md` | High as workflow discipline | Used in protocol; not isolated as an ablation. |
-| Weak planning | Strong brief, weak execution | `mentor-brief-template.md`, `operator-runbook.md` | High as handoff format | Briefs improved auditability; success-rate lift unproven. |
+| Weak planning | Strong brief, weak execution | `mentor-brief-template.md`, `operator-runbook.md` | Handoff-format hypothesis | Briefs made required inputs and evidence more inspectable; success-rate lift unproven. |
 | Weak self-correction | Environment feedback and gates | `gates/blast-radius-check.py`, `gates/runtime-floor-check.py`, verification sections in briefs/reviews | High as deterministic tooling | Gates now cover scope drift and a narrow Python runtime-floor failure; broader semantic correctness still needs tests/review. |
 | High error cost | Isolated runs and Best-of-N | `best-of-n-rubric.md`, scorecards, clean worktree protocol | Medium; useful when verification is cheap | Protocol exists; cost ratio unmeasured. |
 | Local blindness after writing | Fresh-context review | `mentor-review-template.md` | Medium to high; strong model used as judge | Review caught runtime-floor and weakened-test issues. |
 | Missing taste or format | Templates and examples | `lesson-ledger-example.md`, `mentor-brief-template.md`, `lesson-capture-template.md` | Medium; especially useful for weak models | Added as few-shot shape; not separately tested. |
-| Repeated mistakes | Lessons, consolidation, gate promotion | `lesson-capture-template.md`, `lesson-ledger-example.md`, `future/lesson-ledger-v1.md` | High; main v1 direction | Same-repo lesson transfer shown in tiny `jc-687` case study. |
+| Repeated mistakes | Lessons, consolidation, gate promotion | `lesson-capture-template.md`, `lesson-ledger-example.md`, `future/lesson-ledger-v1.md` | Archived v1 proposal | A tiny, confounded `jc-687` sequence cannot establish causal lesson transfer. |
 
 ## How The Pieces Work Together
 
@@ -33,9 +36,9 @@ strong model supplies judgment
   -> Repeated lessons become gates
 ```
 
-This is why the package should not start with model routing. Routing tries to
-predict whether the weak model is smart enough. Mentor Loop changes the task so
-the weak model needs less hidden judgment.
+This was the rationale for not starting with model routing. The package made parts
+of the task explicit; the study did not prove that this improved weak-model
+outcomes.
 
 ## What Is Usage Discipline
 
@@ -50,9 +53,10 @@ These are habits first, products second:
 They are still important. Without them, the product layer has nothing reliable
 to enforce.
 
-## What Has Product Potential
+## Reusable Components
 
-These are the strongest product-shaped pieces:
+These pieces may be reused deliberately. Their presence does not establish product
+potential or outcome benefit:
 
 - Mentor Brief as an auditable handoff format.
 - Apprentice Execute as a weak-model execution skill.
@@ -62,7 +66,7 @@ These are the strongest product-shaped pieces:
 - Lesson ledger as a durable memory system with decay.
 - Lesson-to-gate promotion as the judgment distillation engine.
 
-The likely v1 order remains:
+If explicitly reopened, the archived v1 proposal ordered them as follows:
 
 1. Lesson ledger.
 2. Lesson consolidation review.
@@ -75,11 +79,13 @@ The likely v1 order remains:
 Safe to say:
 
 - The loop is manually operable.
-- Same-repo lessons transferred in a small related-task case study.
+- A tiny same-repo sequence produced accepted lesson-seeded runs, with confounds;
+  it does not establish causal transfer.
 - Review caught failures focused tests missed.
 - A real protocol failure improved a deterministic gate.
 - A real runtime-floor failure became a narrow Python gate.
-- Briefs improved auditability more clearly than success rate.
+- Briefs made required inputs and evidence more inspectable; success-rate lift is
+  unproven.
 
 Do not claim:
 
@@ -97,5 +103,7 @@ It does not yet satisfy the full end-state of "weak models feel
 indistinguishable from strong-direct execution." That would require more
 dogfooding, stronger automation, cost accounting, and product-level evidence.
 
-For now, the package is a lean, evidence-backed operating surface for judgment
-distillation.
+For now, the package is a preserved, mechanically tested operating surface plus
+author-run case-study records. The A′ measurement design was falsified; the
+underlying thesis remains unproven, not disproven, and further product-level
+validation is not pursued.

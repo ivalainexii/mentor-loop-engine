@@ -1,5 +1,11 @@
 # Lesson Ledger v1 Design Brief
 
+> **Archived proposal (2026-07-10):** this is a preserved historical design
+> brief, not an approved feature or pending work order. There is no active v1
+> roadmap. Further product-level validation is not being pursued; any reuse
+> requires a new explicit decision and evidence contract. `README.md` controls
+> current status and claims. The original text below is retained for provenance.
+
 This is the first v1 feature to build after publication feedback or repeated
 manual dogfood pain. It should replace append-only lesson notes with a small
 judgment asset ledger.

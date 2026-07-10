@@ -1,10 +1,14 @@
 # Integration Map
 
-This package is the lean publication and operating surface. It intentionally
-does not install the older framework pieces by default.
+> **Archived design map (2026-07-10):** this file records possible component
+> relationships in the preserved prototype. It is not an active integration or
+> product roadmap. `README.md` controls current claims.
 
-Use this map to understand how the workflow can later become skills, hooks, and
-subagents without changing the thesis.
+This package was the lean publication and operating surface. It intentionally
+did not install the older framework pieces by default.
+
+Use this map to understand the historical component boundaries. Any future reuse
+requires an explicit decision; it cannot be inferred from the unproven thesis.
 
 ## Current Lean v0 Surface
 
@@ -26,7 +30,8 @@ subagents without changing the thesis.
 | Manual subagents | `subagents/*.md` | Copy/paste prompt cards for separate model windows. |
 | Skill wrappers | `skills/*/SKILL.md` | Minimal Codex skill-shaped wrappers; not auto-installed. |
 
-This is enough for manual dogfooding and publication.
+This documents a manually operable surface. It does not establish outcome uplift
+or create a current dogfood/publication obligation.
 
 ## Existing Skill-Shaped Pieces
 
@@ -40,14 +45,14 @@ Their current role is reference material. Do not require users to install them
 for v0, and do not claim skill distribution until they have been installed and
 tested in a real Codex skill environment.
 
-If converted into installable skills later:
+If an owner explicitly chooses to reuse these as installable skills:
 
 - `apprentice-execute` should wrap `apprentice-execute.md`.
 - `mentor-review` should wrap `mentor-review-template.md`.
 - `lesson-capture` should wrap `lesson-capture-template.md` and preserve lesson
   metadata/decay rules.
 
-Do not add a model router before publication feedback proves it is needed.
+Do not add a model router without a separately observed need and explicit decision.
 
 ## Existing Hook-Shaped Pieces
 
@@ -64,8 +69,8 @@ for migration or historical users.
 
 The lean package also includes `gates/runtime-floor-check.py`, a narrow Python
 compatibility gate grown from the `str.removeprefix()` failure in `jc-685`. It
-is intentionally small and table-driven; broader runtime compatibility remains
-future work.
+is intentionally small and table-driven; broader runtime compatibility was not
+implemented in the preserved prototype.
 
 `hooks/pre-commit.sample` shows how to wire the gates into git manually. It is a
 sample, not an installer.
@@ -89,7 +94,7 @@ allowed-action, forbidden-action, and output contracts.
 
 ## What Remains Sealed
 
-Keep these out of the lean path until publication creates specific demand:
+These remained outside the lean path and are not on an active roadmap:
 
 - model router
 - model policy resolver
@@ -124,14 +129,16 @@ Related entry points:
 - `glance-first`: reader/audience judgment turned into a reviewable artifact.
 - `mentor-loop`: strong/weak model handoff plus review, lessons, and gates.
 
-The shared product sentence:
+The shared historical hypothesis was:
 
-> Weak models lack judgment. Turn judgment into artifacts, gates, and durable
-> memory, and weak models can approach stronger-model behavior on repeated work.
+> Making selected judgments explicit in artifacts, gates, and durable memory may
+> improve weak-model work on repeated tasks.
 
-## Next Integration Step
+## Archived Conditional Reuse Order
 
-After publication, pick only one painful manual step to automate.
+There is no next integration step. If an owner explicitly reopens the line after
+observing a concrete repeated pain, the archived proposal was to change one small
+surface at a time:
 
 Recommended order:
 
@@ -141,10 +148,9 @@ Recommended order:
 4. Apprentice execution skill.
 5. Mentor review skill.
 
-Use `future/lesson-ledger-v1.md` as the design brief for the first two steps.
-It defines the lesson record, hit-count rules, consolidation, gate promotion,
-retirement audit, and the boundary between a skill and a hook.
+`future/lesson-ledger-v1.md` preserves the historical design brief for the first
+two items. It does not authorize implementation.
 
-Avoid starting with model routing. Routing guesses whether the weak model can
-handle the task; this workflow makes the task easier for the weak model to
-handle.
+Avoid treating model routing or the rest of this sequence as validated product
+work. The A′ measurement design was falsified; the underlying thesis remains
+unproven, not disproven, and further product-level validation is not pursued.
