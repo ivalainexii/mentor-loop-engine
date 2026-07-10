@@ -2,6 +2,19 @@
 
 **English** · [中文](README.zh.md)
 
+> **Project status (2026-07-10): preserved research prototype; superseded as the
+> default system architecture.** The CLI, tests, experiments, and reports remain available
+> as evidence and reusable primitives. This repository has no active product roadmap; new
+> work is limited to evidence-backed defects or explicitly chosen reuse. The rollback baseline
+> is the annotated tag `mentor-loop-v2-preserved-20260710`.
+
+| Claim / commitment | Close-out status | Evidence-bounded reading |
+| --- | --- | --- |
+| Deterministic engine, artifact trail, and fail-closed package/runtime checks | **completed** | 206 unit tests and the package verifier pass at the preserved baseline |
+| Auditability and prevention of specific observed failure modes | **partially answered** | Author-run cases found real failures and produced gates; no third-party engine cold-start |
+| A′ registered metric could measure the intended compounding effect | **falsified** | The metric was structurally unable to produce the intended signal; see the postmortem |
+| Further product-level validation of cheap-model outcome uplift, cost advantage, or judgment compounding | **not pursued** | Earlier author-run experiments were insufficient for a trustworthy baseline/cost result; this repo makes no product claim |
+
 Keep a cheap coding agent on a short leash. It executes a strong model's work order **inside a
 deterministic scope gate** (edits to files the plan didn't list are blocked), under a review that reads
 only the diff — and every run is written to disk so you can audit exactly what happened.
@@ -54,9 +67,10 @@ a Claude-Code-native skill (`/mentor-loop <task>` + a subagent).
 | substrate    | Claude Code skill + subagent     | Python CLI driver that shells `codex` |
 | entry        | `/mentor-loop <task>` in-session | `python tools/mentor-loop.py …`       |
 
-They are **siblings, not versions** — the skill is not superseded by this engine. **Which one?**
-Working inside a Claude Code session → use the skill. Want a scriptable CLI, or to drive non-Claude
-models → use this engine.
+Within the preserved v2 line they are **siblings, not versions** — one did not replace the other.
+The product line itself is now superseded as the default architecture. For historical or explicit
+reuse: work inside Claude Code → use the skill; need a scriptable CLI or non-Claude driver → use
+this engine.
 
 ## Quickstart
 
@@ -119,45 +133,33 @@ future briefs, and records the ruling back to the ledger — no ruling, no unloc
 routes to a direction-only architect audit — never a code review — instead of a blind retry; see
 `operator-runbook.md`).
 
-## Honest status: a working tool vs. an open research claim
+## Honest status: a working tool and a closed research program
 
-Everything above is a **working, tested mechanism you can run today**. What is *not* settled is the
-research question this project started from — and this repo is deliberate about saying which is which
-(measuring your own tooling honestly is part of the point, and part of what it's meant to demonstrate).
-
-> **The open question:** does packaging judgment this way make a cheap model perform *closer to* a
-> strong one — and does the architect layer's benefit **compound** as its decision ledger grows?
+Everything above is a **working, tested mechanism you can run today**. The research program that
+produced it is now closed rather than left as an implied product obligation. Its historical question
+was whether packaging judgment this way made a cheap model perform *closer to* a strong one, and
+whether the architect layer's benefit **compounded** as its decision ledger grew.
 
 **Established (in this repo, verifiable by running it):** the loop runs end-to-end and produces the
 full artifact set; the gates are real deterministic code exercised by tests; the
-guard / escalation / architect-loop / failure-review round-trips behave as specified; 166 tests pass
+guard / escalation / architect-loop / failure-review round-trips behave as specified; 206 tests pass
 and the package self-check is green.
 
-**Still open (stated plainly so it can't be quietly skipped):**
+**Final research disposition:**
 
-- **The compounding claim** is a *pre-registered, open measurement*, not a finding (see below); it has
-  not cleanly fallen yet.
-- Recent zero-correction datapoints are **weak** — the apprentice's slice was nearly fully specified
-  from the author's own validated run, not an independent execution.
-- All datapoints are **author-run**: no baseline comparison (cheap-model-alone vs. full-loop), and no
-  independent third-party run of this engine.
-- **No cost measurement** yet — treat this as discipline tooling and a case study, not cost arbitrage.
+- The preregistered A′ **measurement design was falsified**: the harness structurally could not produce
+  the intended metric. The pilot therefore closed **uninformative**, providing zero evidence in either
+  direction about the underlying compounding thesis.
+- The cheap-model uplift, cost-advantage, and compounding theses remain **unproven, not disproven**.
+  Earlier datapoints were author-run, tiny, and confounded by an apprentice slice largely specified
+  from the author's validated run; there was no trustworthy cheap-model-alone baseline, cost measure,
+  or independent third-party engine run.
+- Further product-level validation is **not pursued**. There is no remaining `n ≈ 8` obligation or
+  active roadmap. Treat this as discipline tooling and a case study, not cost arbitrage. Reopening the
+  research would require an explicit decision and a new measurement contract.
 
-### A read fixed in advance
-
-This is a **tiny, single-author sample (n ≈ 7)** — nowhere near enough to conclude anything, and I
-won't dress it up as if it were. But the read was written down *before* the result, so it can't be
-quietly moved later:
-
-> If the correction rate has **not clearly fallen by ~n = 8**, the "compounding" claim is recorded as an
-> **honest negative** — and the pitch narrows to: judgment can be *rationed* to an architect, but is not
-> shown to *compound* as the ledger grows.
-
-The raw series lives in a target repo's `.mentor-loop/decisions.md`.
-
-The first preregistered pilot of that measurement closed **uninformative** — the registered metric
-turned out to be one the harness structurally couldn't produce, so it's zero evidence in either
-direction. The full postmortem, including how two independent adjudications caught it, is in
+The historical raw series lives in a target repo's `.mentor-loop/decisions.md`. The full A′
+postmortem, including how two independent adjudications caught the invalid metric, is in
 [docs/aprime-postmortem.md](docs/aprime-postmortem.md).
 
 ## Current limitations
