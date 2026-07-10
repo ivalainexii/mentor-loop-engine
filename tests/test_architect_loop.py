@@ -11,15 +11,40 @@ Tests the architect-loop closure functions that close B's escalation:
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+
+
+def create_directory_alias(link: Path, target: Path) -> None:
+    try:
+        link.symlink_to(target, target_is_directory=True)
+        return
+    except OSError as symlink_error:
+        if os.name != "nt":
+            raise symlink_error
+    junction = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if junction.returncode != 0:
+        raise OSError(f"could not create directory symlink or junction: {junction.stdout}")
 
 
 def _load(module_name: str, relpath: str):
@@ -46,6 +71,154 @@ irrelevant.
 - Decision: seven.
 - Consequences / guardrail for future briefs: keep the exec channel opt-in.
 """
+
+
+class RunIdentityTests(unittest.TestCase):
+    def test_default_run_ids_are_unique_in_a_tight_loop(self):
+        run_ids = {ml.now_run_id("same task") for _ in range(1000)}
+        self.assertEqual(len(run_ids), 1000)
+
+    def test_default_run_id_stays_valid_for_a_long_task_name(self):
+        run_id = ml.now_run_id("x" * 300)
+
+        self.assertEqual(ml.validate_run_id(run_id), run_id)
+        self.assertLessEqual(len(run_id), 128)
+
+    def test_invalid_explicit_run_ids_are_rejected(self):
+        invalid = ("", ".", "..", "../escape", "a/b", "a\\b", "two words", "CON", "con.txt", "-leading", "foo.")
+        for run_id in invalid:
+            with self.subTest(run_id=run_id):
+                with self.assertRaises(ValueError):
+                    ml.validate_run_id(run_id)
+
+    def test_two_callers_cannot_reserve_the_same_run_id(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+
+            def reserve():
+                try:
+                    return ml.reserve_run_dir(repo, "task", "shared-run")[0]
+                except RuntimeError:
+                    return "blocked"
+
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results = list(pool.map(lambda _index: reserve(), range(2)))
+
+        self.assertEqual(sorted(results), ["blocked", "shared-run"])
+
+    def test_stage_rejects_a_linked_run_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            outside = root / "outside"
+            outside.mkdir()
+            runs = repo / ".mentor-loop" / "runs"
+            runs.mkdir(parents=True)
+            try:
+                create_directory_alias(runs / "linked-run", outside)
+            except OSError as error:
+                self.skipTest(f"directory alias unavailable: {error}")
+
+            with self.assertRaisesRegex(RuntimeError, "link|reparse"):
+                ml.existing_run_dir_for(repo, "linked-run")
+
+    def test_reservation_rejects_a_linked_runs_root(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            repo = root / "repo"
+            outside = root / "outside-runs"
+            outside.mkdir()
+            mentor_loop = repo / ".mentor-loop"
+            mentor_loop.mkdir(parents=True)
+            try:
+                create_directory_alias(mentor_loop / "runs", outside)
+            except OSError as error:
+                self.skipTest(f"directory alias unavailable: {error}")
+
+            with self.assertRaisesRegex(RuntimeError, "link|reparse"):
+                ml.reserve_run_dir(repo, "task", "safe-run")
+
+            self.assertFalse((outside / "safe-run").exists())
+
+    def test_stage_rejects_a_case_variant_of_the_stored_run_id(self):
+        if os.path.normcase("Case-Run") != os.path.normcase("case-run"):
+            self.skipTest("filesystem case aliases are not active on this platform")
+        with tempfile.TemporaryDirectory() as d:
+            repo = Path(d)
+            (repo / ".mentor-loop" / "runs" / "Case-Run").mkdir(parents=True)
+
+            with self.assertRaisesRegex(RuntimeError, "identity does not match"):
+                ml.existing_run_dir_for(repo, "case-run")
+
+    def test_legacy_parser_accepts_and_locates_run_id(self):
+        argv = ["--repo", ".", "--run-id", "legacy-run", "fix", "bug"]
+
+        args = ml.parse_legacy(argv)
+
+        self.assertEqual(args.run_id, "legacy-run")
+        self.assertEqual(args.task, ["fix", "bug"])
+        self.assertEqual(ml.first_positional(argv), "fix")
+
+
+class GitPorcelainChannelTests(unittest.TestCase):
+    """Git diagnostics must not be interpreted as porcelain status data."""
+
+    @staticmethod
+    def _git_result(*, returncode: int = 0, stdout: str = "", stderr: str = ""):
+        def fake_run(*args, **kwargs):
+            if kwargs.get("stderr") == subprocess.STDOUT:
+                return SimpleNamespace(returncode=returncode, stdout=stdout + stderr)
+            return SimpleNamespace(returncode=returncode, stdout=stdout, stderr=stderr)
+
+        return fake_run
+
+    def test_clean_worktree_ignores_zero_exit_git_diagnostic(self):
+        warning = "warning: unable to access global excludes file: Permission denied\n"
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(stderr=warning),
+        ):
+            ml.ensure_clean_worktree(Path("."))
+
+    def test_clean_worktree_still_blocks_real_porcelain_output(self):
+        warning = "warning: unable to access global excludes file: Permission denied\n"
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(stdout=" M app.py\n", stderr=warning),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "app.py"):
+                ml.ensure_clean_worktree(Path("."))
+
+    def test_clean_worktree_still_blocks_failed_git_status(self):
+        with mock.patch.object(
+            ml.subprocess,
+            "run",
+            side_effect=self._git_result(returncode=128, stderr="fatal: not a work tree\n"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "could not read git status"):
+                ml.ensure_clean_worktree(Path("."))
+
+    def test_snapshot_cannot_recover_from_an_initial_git_status_failure(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            repo = Path(tmpdir)
+            (repo / ".mentor-loop" / "runs" / "run-1").mkdir(parents=True)
+            status_results = [
+                (128, "", "fatal: first status failed\n"),
+                (0, "", ""),
+            ]
+            with mock.patch.object(ml, "ensure_git_repo", return_value=repo):
+                with mock.patch.object(
+                    ml,
+                    "git_porcelain_status",
+                    side_effect=status_results,
+                ) as status_mock:
+                    with mock.patch.object(ml, "run_local", return_value=(0, "")):
+                        with self.assertRaisesRegex(RuntimeError, "first status failed"):
+                            ml.stage_snapshot(repo, "run-1")
+
+            self.assertEqual(status_mock.call_count, 1)
 
 
 class LoadPrecedentsTests(unittest.TestCase):
@@ -219,6 +392,57 @@ class StageBriefCheckAndArchitectPacketTests(unittest.TestCase):
         """init_run writes precedents.md to the run directory."""
         run_id, run_dir, _ = ml.init_run(self.repo, "loosen the citation gate per DEC-007")
         self.assertTrue((run_dir / "precedents.md").exists())
+
+    def test_explicit_run_id_creates_exact_directory(self):
+        run_id, run_dir, _ = ml.init_run(self.repo, "task", "external.run_01-abc")
+
+        self.assertEqual(run_id, "external.run_01-abc")
+        self.assertEqual(run_dir.name, run_id)
+
+    def test_duplicate_explicit_run_id_never_overwrites_evidence(self):
+        run_id, run_dir, _ = ml.init_run(self.repo, "task", "external-duplicate")
+        sentinel = run_dir / "task.txt"
+        before = sentinel.read_bytes()
+
+        with self.assertRaisesRegex(RuntimeError, "already exists"):
+            ml.init_run(self.repo, "different task", run_id)
+
+        self.assertEqual(sentinel.read_bytes(), before)
+        self.assertFalse((run_dir.parent / f"{run_id}-1").exists())
+
+    def test_generated_collision_retries_without_touching_old_run(self):
+        old_dir = self.repo / ".mentor-loop" / "runs" / "generated-collision"
+        old_dir.mkdir(parents=True)
+        sentinel = old_dir / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        with mock.patch.object(ml, "now_run_id", side_effect=["generated-collision", "generated-fresh"]):
+            run_id, run_dir, _ = ml.init_run(self.repo, "task")
+
+        self.assertEqual(run_id, "generated-fresh")
+        self.assertEqual(run_dir.name, "generated-fresh")
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+
+    def test_missing_stage_run_does_not_create_a_ghost_directory(self):
+        ghost = self.repo / ".mentor-loop" / "runs" / "typo-run"
+
+        with self.assertRaisesRegex(RuntimeError, "run directory does not exist"):
+            ml.stage_brief_check(self.repo, "typo-run")
+
+        self.assertFalse(ghost.exists())
+
+    def test_run_full_duplicate_does_not_write_unknown_or_existing_run(self):
+        run_id, run_dir, _ = ml.init_run(self.repo, "task", "full-duplicate")
+        sentinel = run_dir / "task.txt"
+        before = sentinel.read_bytes()
+
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            result = ml.run_full(self.repo, "different task", {}, requested_run_id=run_id)
+
+        self.assertEqual(result, 1)
+        self.assertIn(f"- run_id: {run_id}", stderr.getvalue())
+        self.assertEqual(sentinel.read_bytes(), before)
+        self.assertFalse((run_dir.parent / "unknown").exists())
 
     def test_stage_brief_check_blocks_on_fail_open(self):
         """stage_brief_check returns 1 (BLOCKED) on a fail-open guard."""

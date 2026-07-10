@@ -1,5 +1,10 @@
 # Codex CLI Limitation Report
 
+> **Archived report (2026-07-10):** this records a historical environment
+> limitation and its then-proposed next step. It is not a pending work order, and
+> no command below is awaiting execution. Further product-level validation is not
+> being pursued; `README.md` controls current status and claims.
+
 Status update:
 
 > Superseded. `codex-cli-verified-flags.md` records the independent npm Codex

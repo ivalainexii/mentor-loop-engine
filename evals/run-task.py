@@ -7,10 +7,12 @@ import argparse
 import csv
 import datetime as dt
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -52,6 +54,19 @@ SCORECARD_COLUMNS = [
     "artifacts_dir",
     "notes",
 ]
+SAFE_PATH_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOWS_RESERVED_STEMS = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+class EvalReservationCollision(RuntimeError):
+    """A create-only eval artifact path already exists."""
 
 
 def configure_stdio() -> None:
@@ -136,6 +151,62 @@ def repo_slug(repo_url: str) -> str:
     return slug or "repo"
 
 
+def validate_eval_path_segment(value: str, label: str) -> str:
+    if not isinstance(value, str) or not SAFE_PATH_SEGMENT.fullmatch(value):
+        raise ValueError(f"{label} must be a safe 1-128 character ASCII path segment")
+    if ".." in value or value.endswith("."):
+        raise ValueError(f"{label} is not a canonical path segment: {value}")
+    if value.split(".", 1)[0].upper() in WINDOWS_RESERVED_STEMS:
+        raise ValueError(f"{label} uses a reserved Windows device name: {value}")
+    return value
+
+
+def ensure_eval_path_within(run_root: Path, candidate: Path) -> None:
+    root = run_root.resolve(strict=False)
+    resolved = candidate.resolve(strict=False)
+    try:
+        common = os.path.commonpath([str(root), str(resolved)])
+    except ValueError as error:
+        raise RuntimeError(f"eval path resolves outside work root: {candidate}") from error
+    if os.path.normcase(common) != os.path.normcase(str(root)):
+        raise RuntimeError(f"eval path resolves outside work root: {candidate}")
+
+
+def new_eval_run_id() -> str:
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    return f"{stamp}-{uuid.uuid4().hex[:16]}"
+
+
+def reserve_eval_artifacts(
+    run_root: Path, task_id: str, arm: str, run_id: str
+) -> Path:
+    task_id = validate_eval_path_segment(task_id, "task_id")
+    arm = validate_eval_path_segment(arm, "arm")
+    run_id = validate_eval_path_segment(run_id, "run_id")
+    artifacts = run_root / "artifacts" / task_id / arm / run_id
+    ensure_eval_path_within(run_root, artifacts)
+    try:
+        artifacts.mkdir(parents=True, exist_ok=False)
+    except FileExistsError as error:
+        raise EvalReservationCollision(
+            f"eval artifact directory already exists: {artifacts}"
+        ) from error
+    ensure_eval_path_within(run_root, artifacts)
+    return artifacts
+
+
+def reserve_eval_run(
+    run_root: Path, task_id: str, arm: str, attempts: int = 8
+) -> tuple[str, Path]:
+    for _attempt in range(attempts):
+        run_id = new_eval_run_id()
+        try:
+            return run_id, reserve_eval_artifacts(run_root, task_id, arm, run_id)
+        except EvalReservationCollision:
+            continue
+    raise RuntimeError(f"could not reserve a unique eval run after {attempts} attempts")
+
+
 def ensure_mock_repo(repo: Path) -> None:
     repo.mkdir(parents=True, exist_ok=True)
     if not (repo / ".git").exists():
@@ -150,6 +221,12 @@ def ensure_mock_repo(repo: Path) -> None:
 
 def prepare_repo(task: dict, work_root: Path, run_id: str) -> Path:
     repo_url = task["repo"]["url"]
+    task_id = validate_eval_path_segment(task["id"], "task_id")
+    run_id = validate_eval_path_segment(run_id, "run_id")
+    worktree = work_root / f"{task_id}-{run_id}"
+    ensure_eval_path_within(work_root, worktree)
+    if os.path.lexists(worktree):
+        raise RuntimeError(f"eval worktree already exists: {worktree}")
     source = work_root / "sources" / repo_slug(repo_url)
     if repo_url.startswith("__mock__"):
         ensure_mock_repo(source)
@@ -163,9 +240,6 @@ def prepare_repo(task: dict, work_root: Path, run_id: str) -> Path:
         if code != 0:
             raise RuntimeError("git fetch failed:\n" + output)
 
-    worktree = work_root / f"{task['id']}-{run_id}"
-    if worktree.exists():
-        shutil.rmtree(worktree)
     base_ref = task["repo"].get("base_ref", "HEAD")
     code, output = run_command(["git", "worktree", "add", "--detach", str(worktree), base_ref], source)
     if code != 0:
@@ -191,10 +265,15 @@ def issue_text(task: dict) -> str:
 
 
 def active_lessons() -> str:
-    path = PACKAGE_ROOT / ".mentor-loop" / "lessons.md"
+    path = PACKAGE_ROOT / "evals" / "fixtures" / "package-lessons.md"
     if not path.exists():
-        return "No active lessons found."
+        raise RuntimeError(f"package lesson seed missing: {path}")
     text = path.read_text(encoding="utf-8-sig")
+    if not text.strip():
+        raise RuntimeError(f"package lesson seed contains no active lessons: {path}")
+    seed_match = re.search(r"(?m)^- `seed_id`:\s*(\S+)\s*$", text)
+    if not seed_match:
+        raise RuntimeError(f"package lesson seed missing seed_id: {path}")
     entries: list[str] = []
     current: list[str] = []
     for line in text.splitlines():
@@ -210,8 +289,8 @@ def active_lessons() -> str:
         if "`status`: active" in entry:
             entries.append(entry)
     if not entries:
-        return "No active lessons found."
-    return "\n\n".join(entries)
+        raise RuntimeError(f"package lesson seed contains no active lessons: {path}")
+    return f"- `seed_id`: {seed_match.group(1)}\n\n" + "\n\n".join(entries)
 
 
 def lesson_origin_relation(task: dict) -> str:
@@ -222,7 +301,7 @@ def lesson_origin_relation(task: dict) -> str:
 def run_model_arm(task: dict, arm: str, repo: Path, run_dir: Path, config: dict) -> tuple[int, str]:
     prompt = issue_text(task)
     if arm == "lessons-only":
-        prompt += "\n\nActive lessons from package ledger:\n" + active_lessons()
+        prompt += "\n\nActive lessons from versioned package seed:\n" + active_lessons()
     (run_dir / f"{arm}-prompt.md").write_text(prompt, encoding="utf-8")
     output = run_dir / f"{arm}-codex-output.md"
     command = command_from_template(config["cheap_command"], repo, output)
@@ -259,8 +338,7 @@ def run_verification(task: dict, repo: Path, key: str, log_path: Path) -> int:
         command = check.get("command", [])
         code, output = run_command(command, repo, timeout=3600)
         lines.append(f"## {key}: {name}\nexit_code: {code}\n\n{output}")
-        if code != 0:
-            worst = code
+        worst = aggregate_verification_exit(worst, code)
     log_path.write_text("\n\n".join(lines), encoding="utf-8")
     return worst
 
@@ -296,6 +374,19 @@ def parse_failure_ids(output: str) -> set[str]:
     return ids
 
 
+def verification_exit_incomplete(exit_code: int) -> bool:
+    return exit_code in {124, 127}
+
+
+def aggregate_verification_exit(current: int, candidate: int) -> int:
+    """Preserve command-missing/timeout evidence across multi-check suites."""
+    if verification_exit_incomplete(current):
+        return current
+    if verification_exit_incomplete(candidate):
+        return candidate
+    return candidate if candidate != 0 else current
+
+
 def run_regression(task: dict, repo: Path, log_path: Path) -> dict:
     worst = 0
     total_count = 0
@@ -325,8 +416,7 @@ def run_regression(task: dict, repo: Path, log_path: Path) -> dict:
                 ]
             )
         )
-        if code != 0:
-            worst = code
+        worst = aggregate_verification_exit(worst, code)
     log_path.write_text("\n\n".join(sections), encoding="utf-8")
     return {
         "exit_code": worst,
@@ -354,7 +444,12 @@ def make_mock_engine_config(run_dir: Path) -> Path:
 
 
 def run_full_loop(
-    task: dict, repo: Path, run_dir: Path, config: dict, baseline_failures: int
+    task: dict,
+    repo: Path,
+    run_dir: Path,
+    config: dict,
+    baseline_failures: int,
+    run_id: str,
 ) -> tuple[int, str]:
     engine_config = config.get("mentor_loop_config")
     if engine_config == "__mock__":
@@ -412,6 +507,8 @@ def run_full_loop(
             str(config_path),
             "--verification",
             str(verification_spec),
+            "--run-id",
+            run_id,
             issue,
         ],
         repo,
@@ -422,6 +519,34 @@ def run_full_loop(
 def parse_review_verdict(engine_output: str) -> str:
     match = re.search(r"^- review_verdict:\s*-?\s*(.+)$", engine_output, re.MULTILINE)
     return match.group(1).strip() if match else ""
+
+
+def parse_engine_field(engine_output: str, field: str) -> str:
+    match = re.search(rf"^- {re.escape(field)}:\s*(.+)$", engine_output, re.MULTILINE)
+    return match.group(1).strip() if match else ""
+
+
+def engine_run_identity_error(expected_run_id: str, engine_output: str) -> str | None:
+    observed = parse_engine_field(engine_output, "run_id")
+    if observed == expected_run_id:
+        return None
+    return (
+        "engine run identity mismatch: "
+        f"expected={expected_run_id}; observed={observed or 'missing'}"
+    )
+
+
+def review_verdict_outcome(value: str) -> str | None:
+    normalized = re.sub(r"[*_`]", "", (value or "")).strip().lstrip("-").strip().lower()
+    if normalized.startswith("verdict:"):
+        normalized = normalized.split(":", 1)[1].strip()
+    normalized = normalized.rstrip(".!").strip()
+    choices = {
+        "approved": "approved",
+        "needs fixes": "needs_fixes",
+        "stop and re-plan": "stop_and_replan",
+    }
+    return choices.get(normalized)
 
 
 def parse_gate_exit(engine_output: str) -> str:
@@ -445,25 +570,51 @@ def classify(
     infra_error: bool,
     review_verdict: str,
     work_changed: bool,
+    regression_code: int = 0,
+    regression_baseline_code: int = 0,
 ) -> str:
     if infra_error:
         return "infra_error"
     if env_code != 0:
         return "env_failure"
+    run_reasons = {
+        reason.strip()
+        for reason in parse_engine_field(engine_output, "run_block_reasons").split(",")
+        if reason.strip() and reason.strip() != "none"
+    }
+    if "verification_could_not_run" in run_reasons:
+        return "verification_incomplete"
+    if "verification_fail" in run_reasons:
+        return "verification_failure"
+    if {"failure_review_error", "failure_review_unknown", "review_process"} & run_reasons:
+        return "infra_error"
+    if {"failure_review_park", "review_needs_fixes", "review_stop_and_replan"} & run_reasons:
+        return "review_blocked"
+    if "review_invalid" in run_reasons:
+        return "protocol_violation"
+    if {"deterministic_gates", "brief_check"} & run_reasons:
+        return "gate_blocked"
+    if any(
+        verification_exit_incomplete(code)
+        for code in (focused_code, regression_code, regression_baseline_code)
+    ):
+        return "verification_incomplete"
+    parsed_review = review_verdict_outcome(review_verdict)
+    if review_verdict and parsed_review != "approved":
+        return "review_blocked"
     if model_code != 0:
         if "stopped_during_brief" in engine_output:
             return "gate_blocked"
-        if "gate_" in engine_output or "result: BLOCKED" in engine_output:
+        if re.search(r"stage:\s*(?:brief-check|gates)\s*\|\s*result:\s*BLOCKED", engine_output, re.IGNORECASE):
             return "gate_blocked"
-        if "Needs fixes" in engine_output or "Stop and re-plan" in engine_output:
+        gate_exit = parse_gate_exit(engine_output)
+        if gate_exit and gate_exit != "0":
+            return "gate_blocked"
+        if parsed_review in {"needs_fixes", "stop_and_replan"}:
             return "review_blocked"
         if any(marker in engine_output for marker in ("Traceback", "FileNotFoundError", "No such file", "cannot find the file")):
             return "infra_error"
         return "protocol_violation"
-    # A review verdict other than approval blocks acceptance even when the
-    # engine exits 0 (observed live: verdict "Stop and re-plan" with exit 0).
-    if review_verdict and not re.search(r"approve", review_verdict, re.IGNORECASE):
-        return "review_blocked"
     # Passing tests prove nothing if the model never changed the worktree.
     if not work_changed:
         return "no_op"
@@ -532,13 +683,11 @@ def main() -> int:
     task_path = args.task.resolve()
     task = read_json(task_path)
     config = read_json(args.config)
-    run_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     run_root = args.work_root.resolve()
     run_root.mkdir(parents=True, exist_ok=True)
-    artifacts = run_root / "artifacts" / task["id"] / args.arm / run_id
-    artifacts.mkdir(parents=True, exist_ok=True)
+    run_id, artifacts = reserve_eval_run(run_root, task["id"], args.arm)
 
-    env_code = model_code = focused_code = regression_code = 0
+    env_code = model_code = focused_code = regression_code = regression_baseline_code = 0
     regression_baseline_count = regression_new_failure_count = 0
     engine_output = ""
     notes = ""
@@ -558,13 +707,19 @@ def main() -> int:
         if env_code == 0:
             baseline_regression = run_regression(task, repo, artifacts / "baseline-regression.txt")
             regression_baseline_count = baseline_regression["count"]
+            regression_baseline_code = baseline_regression["exit_code"]
             if args.arm == "full-loop":
                 model_code, engine_output = run_full_loop(
-                    task, repo, artifacts, config, regression_baseline_count
+                    task, repo, artifacts, config, regression_baseline_count, run_id
                 )
                 (artifacts / "full-loop.txt").write_text(engine_output, encoding="utf-8")
                 review_verdict = parse_review_verdict(engine_output)
                 gate_exit = parse_gate_exit(engine_output)
+                if model_code == 0:
+                    identity_error = engine_run_identity_error(run_id, engine_output)
+                    if identity_error:
+                        infra_error = True
+                        notes = "; ".join(part for part in (notes, identity_error) if part)
             else:
                 model_code, model_output = run_model_arm(task, args.arm, repo, artifacts, config)
                 (artifacts / "model.txt").write_text(model_output, encoding="utf-8")
@@ -590,6 +745,8 @@ def main() -> int:
         infra_error,
         review_verdict,
         work_changed,
+        regression_code=regression_code,
+        regression_baseline_code=regression_baseline_code,
     )
     if outcome not in OUTCOME_TYPES:
         outcome = "protocol_violation"

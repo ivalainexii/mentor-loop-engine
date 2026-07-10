@@ -1,5 +1,10 @@
 # Work Order 3: two small runner fixes from the full probe rerun
 
+> **Archived work order (2026-07-10):** retained as historical runner context,
+> not as a pending instruction. No command or next step in this file is currently
+> authorized or awaiting execution. Further product-level validation is not being
+> pursued; `README.md` controls current status and claims.
+
 Work orders 1-2 are DONE and live-verified. Probe rerun results (jc-694, new
 classifier): raw-weak=accepted, lessons-only=verification_failure, full-loop=
 crashed. Note raw-weak and lessons-only SWAPPED outcomes vs the previous

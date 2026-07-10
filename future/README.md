@@ -1,5 +1,10 @@
 # Future, Not v0
 
+> **Archived proposal (2026-07-10):** this file preserves a historical design
+> direction; it is not an active roadmap and has no pending action. Further
+> product-level validation is not being pursued. `README.md` controls current
+> status and claims. The original text below is retained for provenance only.
+
 These components existed in the larger exploration package, but they are not in
 the lean v0 path because the current evidence supports a publication case
 study, not framework expansion.

@@ -8,6 +8,7 @@ import csv
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,15 @@ from pathlib import Path
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_LESSON_SEED = "evals/fixtures/package-lessons.md"
+PACKAGE_LESSON_SEED_ID = "mentor-loop-eval-lessons-2026-06-11-v1"
+EXPECTED_PACKAGE_LESSON_IDS = (
+    "2026-06-11 windows-text-encoding",
+    "2026-06-11 codex-command-resolution",
+    "2026-06-11 apprentice-shell-environment",
+    "2026-06-11 apprentice-verification-summary-before-review",
+    "2026-06-11 baseline-relative-regression",
+)
 
 
 def ok(message: str) -> None:
@@ -43,10 +53,52 @@ def load_manifest() -> tuple[dict, list[str]]:
 
 
 def check_manifest_files(files: list[str]) -> None:
+    if len(files) != len(set(files)):
+        raise RuntimeError("manifest contains duplicate file paths")
     missing = [path for path in files if not (PACKAGE_ROOT / path).is_file()]
     if missing:
         raise RuntimeError("manifest references missing files: " + ", ".join(missing))
+    git_root = subprocess.run(
+        ["git", "rev-parse", "--show-prefix"],
+        cwd=PACKAGE_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if git_root.returncode == 0 and not git_root.stdout.strip():
+        listed = subprocess.run(
+            ["git", "ls-files", "--cached", "-z"],
+            cwd=PACKAGE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if listed.returncode != 0:
+            raise RuntimeError("could not audit manifest paths against the Git index")
+        tracked = {item.decode("utf-8", errors="replace") for item in listed.stdout.split(b"\0") if item}
+        untracked = [path for path in files if path.replace("\\", "/") not in tracked]
+        if untracked:
+            raise RuntimeError("manifest references files absent from the Git index: " + ", ".join(untracked))
     ok(f"manifest files present ({len(files)} files)")
+
+
+def check_package_lesson_seed(files: list[str]) -> str:
+    path = PACKAGE_ROOT / PACKAGE_LESSON_SEED
+    text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+    if f"- `seed_id`: {PACKAGE_LESSON_SEED_ID}" not in text:
+        raise RuntimeError("package lesson seed_id is missing or unexpected")
+    lesson_ids = tuple(re.findall(r"(?m)^##\s+(.+?)\s*$", text))
+    if lesson_ids != EXPECTED_PACKAGE_LESSON_IDS:
+        raise RuntimeError("package lesson seed lesson IDs do not match the frozen release set")
+    if len(re.findall(r"(?m)^- `status`:\s*active\s*$", text)) != len(EXPECTED_PACKAGE_LESSON_IDS):
+        raise RuntimeError("package lesson seed must contain five active lessons")
+    source_artifacts = re.findall(r"(?m)^- `source_artifact`:\s*(\S+)\s*$", text)
+    if len(source_artifacts) != len(EXPECTED_PACKAGE_LESSON_IDS):
+        raise RuntimeError("every package lesson must name one source_artifact")
+    unavailable = [source for source in source_artifacts if source not in files or not (PACKAGE_ROOT / source).is_file()]
+    if unavailable:
+        raise RuntimeError("package lesson sources are not packaged: " + ", ".join(unavailable))
+    ok(f"package lesson seed provenance checks pass ({PACKAGE_LESSON_SEED_ID})")
+    return text
 
 
 def check_csv_files() -> None:
@@ -437,6 +489,7 @@ def check_codex_native_driver() -> None:
         repo = Path(tmpdir) / "stage repo"
         repo.mkdir()
         subprocess.run(["git", "init"], cwd=repo, check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        requested_run_id = "verifier-stage-run"
         init_result = subprocess.run(
             [
                 sys.executable,
@@ -444,6 +497,8 @@ def check_codex_native_driver() -> None:
                 "init",
                 "--repo",
                 str(repo),
+                "--run-id",
+                requested_run_id,
                 "fix staged smoke bug",
             ],
             cwd=PACKAGE_ROOT,
@@ -458,7 +513,48 @@ def check_codex_native_driver() -> None:
         if not match:
             raise RuntimeError("Codex-native stage init did not print run_id")
         run_id = match.group(1)
+        if run_id != requested_run_id:
+            raise RuntimeError(
+                f"Codex-native stage init changed the requested run_id: expected={requested_run_id}; observed={run_id}"
+            )
         run_dir = repo / ".mentor-loop" / "runs" / run_id
+        task_sentinel = (run_dir / "task.txt").read_bytes()
+        duplicate_result = subprocess.run(
+            [
+                sys.executable,
+                str(driver),
+                "init",
+                "--repo",
+                str(repo),
+                "--run-id",
+                requested_run_id,
+                "different staged smoke bug",
+            ],
+            cwd=PACKAGE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if duplicate_result.returncode == 0 or "already exists" not in duplicate_result.stdout:
+            fail(duplicate_result.stdout.strip())
+            raise RuntimeError("Codex-native stage init did not fail closed on a duplicate run_id")
+        if (run_dir / "task.txt").read_bytes() != task_sentinel:
+            raise RuntimeError("duplicate run_id overwrote existing run evidence")
+        if (run_dir.parent / f"{run_id}-1").exists():
+            raise RuntimeError("duplicate run_id was silently suffixed instead of rejected")
+        missing_run_id = "verifier-missing-run"
+        missing_stage = subprocess.run(
+            [sys.executable, str(driver), "brief-check", "--repo", str(repo), "--run", missing_run_id],
+            cwd=PACKAGE_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if missing_stage.returncode == 0 or "run directory does not exist" not in missing_stage.stdout:
+            fail(missing_stage.stdout.strip())
+            raise RuntimeError("Codex-native stage command did not reject a missing run_id")
+        if (run_dir.parent / missing_run_id).exists():
+            raise RuntimeError("missing stage run_id created a ghost run directory")
         (run_dir / "mentor-brief.md").write_text(
             "## Baseline Before Editing\n\nActual output: baseline passed\n\n"
             "## Blast Radius\n\n- app.py\n",
@@ -676,7 +772,25 @@ def check_windows_encoding_smoke() -> None:
     ok("Windows encoding smoke checks pass")
 
 
-def check_eval_suite() -> None:
+def write_mock_task_with_pinned_python(destination: Path, source_root: Path = PACKAGE_ROOT) -> Path:
+    """Make verifier smoke commands use the interpreter running the verifier."""
+    task_data = json.loads(
+        (source_root / "evals" / "tasks" / "mock-smoke.json").read_text(encoding="utf-8")
+    )
+    for section in ("focused", "regression"):
+        for check in task_data["verification"].get(section, []):
+            command = check.get("command", [])
+            if command and command[0] == "python":
+                command[0] = sys.executable
+    for check in task_data["env"].get("preflight_commands", []):
+        command = check.get("command", [])
+        if command and command[0] == "python":
+            command[0] = sys.executable
+    destination.write_text(json.dumps(task_data, indent=2) + "\n", encoding="utf-8")
+    return destination
+
+
+def check_eval_suite(files: list[str]) -> None:
     require_text(
         PACKAGE_ROOT / "gates" / "env-preflight-check.py",
         ["stage: env-preflight | result:", "preflight_commands", "required_files"],
@@ -696,7 +810,7 @@ def check_eval_suite() -> None:
             "outcome_type",
             "scorecard",
             "lesson_origin_relation",
-            "Active lessons from package ledger:",
+            "Active lessons from versioned package seed:",
             "shutil.which",
             "infra_error",
             "repo_slug",
@@ -746,7 +860,7 @@ def check_eval_suite() -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         work = Path(tmpdir) / "work"
         scorecard = work / "scorecard.csv"
-        task = PACKAGE_ROOT / "evals" / "tasks" / "mock-smoke.json"
+        task = write_mock_task_with_pinned_python(Path(tmpdir) / "mock-smoke.pinned-python.json")
         config = PACKAGE_ROOT / "evals" / "mock-codex.config.json"
         for arm in ("raw-weak", "lessons-only", "full-loop"):
             result = subprocess.run(
@@ -788,11 +902,60 @@ def check_eval_suite() -> None:
         if not prompt_paths:
             raise RuntimeError("lessons-only mock run did not write prompt artifact")
         prompt_text = prompt_paths[-1].read_text(encoding="utf-8")
-        if "Active lessons from package ledger:" not in prompt_text or "windows-text-encoding" not in prompt_text:
-            raise RuntimeError("lessons-only mock prompt did not include package active lessons")
+        required_seed_markers = (
+            "Active lessons from versioned package seed:",
+            PACKAGE_LESSON_SEED_ID,
+            "`hit_count`: 3",
+            *EXPECTED_PACKAGE_LESSON_IDS,
+        )
+        if any(marker not in prompt_text for marker in required_seed_markers):
+            raise RuntimeError("lessons-only mock prompt did not include the versioned package lesson seed")
         baseline_paths = sorted((work / "artifacts" / "mock-smoke" / "raw-weak").glob("*/baseline-regression.txt"))
         if not baseline_paths:
             raise RuntimeError("eval runner mock did not write baseline-regression.txt")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        bundle = Path(tmpdir) / "manifest-bundle"
+        for relative in files:
+            source = PACKAGE_ROOT / relative
+            destination = bundle / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+        task = write_mock_task_with_pinned_python(
+            Path(tmpdir) / "packaged-mock-smoke.json",
+            source_root=bundle,
+        )
+        work = Path(tmpdir) / "packaged-work"
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(bundle / "evals" / "run-task.py"),
+                "--task",
+                str(task),
+                "--arm",
+                "lessons-only",
+                "--work-root",
+                str(work),
+                "--scorecard",
+                str(work / "scorecard.csv"),
+                "--config",
+                str(bundle / "evals" / "mock-codex.config.json"),
+            ],
+            cwd=bundle,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+        if result.returncode != 0 or "outcome_type=accepted" not in result.stdout:
+            fail(result.stdout.strip())
+            raise RuntimeError("isolated manifest bundle lessons-only smoke failed")
+        prompts = sorted(
+            (work / "artifacts" / "mock-smoke" / "lessons-only").glob("*/lessons-only-prompt.md")
+        )
+        if not prompts or PACKAGE_LESSON_SEED_ID not in prompts[-1].read_text(encoding="utf-8"):
+            raise RuntimeError("isolated manifest bundle did not consume its versioned lesson seed")
 
     with tempfile.TemporaryDirectory(dir=PACKAGE_ROOT / "evals") as packaged_tmp:
         packaged_tmp_path = Path(packaged_tmp)
@@ -819,12 +982,13 @@ def check_eval_suite() -> None:
         )
         work = packaged_tmp_path / "work"
         scorecard = work / "scorecard.csv"
+        task = write_mock_task_with_pinned_python(packaged_tmp_path / "mock-smoke.pinned-python.json")
         result = subprocess.run(
             [
                 sys.executable,
                 str(PACKAGE_ROOT / "evals" / "run-task.py"),
                 "--task",
-                str(PACKAGE_ROOT / "evals" / "tasks" / "mock-smoke.json"),
+                str(task),
                 "--arm",
                 "full-loop",
                 "--work-root",
@@ -1163,15 +1327,20 @@ def main() -> int:
     try:
         _, files = load_manifest()
         check_manifest_files(files)
+        seed_before = check_package_lesson_seed(files)
         check_csv_files()
         check_claude_code_wiring()
         check_local_artifacts_are_gitignored()
         check_blast_radius_with_local_artifacts()
         check_codex_native_driver()
         check_windows_encoding_smoke()
-        check_eval_suite()
+        check_eval_suite(files)
         check_gates()
         check_tests()
+        seed_after = (PACKAGE_ROOT / PACKAGE_LESSON_SEED).read_text(encoding="utf-8-sig").replace("\r\n", "\n")
+        if seed_after != seed_before:
+            raise RuntimeError("runtime smoke checks mutated the versioned package lesson seed")
+        ok("runtime smoke checks left the versioned package lesson seed unchanged")
         if args.zip_path is not None:
             check_zip(args.zip_path.resolve(), files)
     except Exception as exc:

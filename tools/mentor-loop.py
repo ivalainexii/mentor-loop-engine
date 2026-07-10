@@ -10,8 +10,10 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 
 
@@ -24,8 +26,38 @@ def slugify(value: str) -> str:
 
 
 def now_run_id(task: str) -> str:
-    stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{stamp}-{slugify(task)}"
+    stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    nonce = uuid.uuid4().hex[:16]
+    slug_budget = 128 - len(stamp) - len(nonce) - 2
+    task_slug = slugify(task)[:slug_budget].rstrip("-") or "task"
+    return f"{stamp}-{task_slug}-{nonce}"
+
+
+RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+WINDOWS_RESERVED_STEMS = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
+
+
+def validate_run_id(run_id: str) -> str:
+    """Return a safe, single-path-segment run id or reject it."""
+    if not isinstance(run_id, str) or not RUN_ID_PATTERN.fullmatch(run_id):
+        raise ValueError(
+            "run_id must be 1-128 ASCII characters, start with an alphanumeric character, "
+            "and contain only alphanumerics, '.', '_', or '-'"
+        )
+    if ".." in run_id:
+        raise ValueError("run_id must not contain '..'")
+    if run_id.endswith("."):
+        raise ValueError("run_id must not end with '.'")
+    if run_id.split(".", 1)[0].upper() in WINDOWS_RESERVED_STEMS:
+        raise ValueError(f"run_id uses a reserved Windows device name: {run_id}")
+    return run_id
 
 
 def read_text(path: Path) -> str:
@@ -56,6 +88,36 @@ def run_local(args: list[str], cwd: Path) -> tuple[int, str]:
     return completed.returncode, completed.stdout
 
 
+def run_local_channels(args: list[str], cwd: Path) -> tuple[int, str, str]:
+    """Run a command while preserving stdout as data and stderr as diagnostics."""
+    completed = subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return completed.returncode, completed.stdout, completed.stderr
+
+
+def git_porcelain_status(repo: Path) -> tuple[int, str, str]:
+    return run_local_channels(["git", "status", "--porcelain"], repo)
+
+
+def process_output(stdout: str, stderr: str) -> str:
+    return "\n".join(part.rstrip() for part in (stdout, stderr) if part.strip())
+
+
+def read_git_porcelain_status(repo: Path) -> tuple[str, str]:
+    code, status, diagnostics = git_porcelain_status(repo)
+    if code != 0:
+        details = process_output(status, diagnostics)
+        raise RuntimeError("could not read git status:\n" + (details or "(no diagnostics)"))
+    return status, diagnostics
+
+
 def ensure_git_repo(repo: Path) -> Path:
     code, output = run_local(["git", "rev-parse", "--show-toplevel"], repo)
     if code != 0:
@@ -75,13 +137,14 @@ def ensure_local_exclude(repo: Path, paths: list[str]) -> None:
 
 
 def ensure_clean_worktree(repo: Path) -> None:
-    code, output = run_local(["git", "status", "--porcelain"], repo)
-    if code != 0:
-        raise RuntimeError("could not read git status:\n" + output)
-    if output.strip():
+    status, diagnostics = read_git_porcelain_status(repo)
+    if status.strip():
+        details = status.rstrip()
+        if diagnostics.strip():
+            details += "\n\ngit diagnostics:\n" + diagnostics.rstrip()
         raise RuntimeError(
             "target repo has existing uncommitted changes; commit, stash, or use a clean worktree before running mentor-loop:\n"
-            + output
+            + details
         )
 
 
@@ -168,20 +231,29 @@ def run_codex(template: object, repo: Path, output: Path, prompt: str, log_path:
     return completed.returncode
 
 
-def git_snapshot(repo: Path) -> str:
-    code_status, status = run_local(["git", "status", "--porcelain"], repo)
+def render_git_snapshot(repo: Path, status: str, status_diagnostics: str) -> str:
     code_stat, stat = run_local(["git", "diff", "--stat"], repo)
     code_diff, diff = run_local(["git", "diff"], repo)
-    return "\n".join(
+    sections = [
+        "# git status --porcelain",
+        status,
+    ]
+    if status_diagnostics.strip():
+        sections.extend(["# git status diagnostics", status_diagnostics])
+    sections.extend(
         [
-            "# git status --porcelain",
-            status if code_status == 0 else f"(failed)\n{status}",
             "# git diff --stat",
             stat if code_stat == 0 else f"(failed)\n{stat}",
             "# git diff",
             diff if code_diff == 0 else f"(failed)\n{diff}",
         ]
     )
+    return "\n".join(sections)
+
+
+def git_snapshot(repo: Path) -> str:
+    status, status_diagnostics = read_git_porcelain_status(repo)
+    return render_git_snapshot(repo, status, status_diagnostics)
 
 
 def run_gate(args: list[str], repo: Path, output: Path) -> int:
@@ -203,7 +275,83 @@ def stage_summary(stage: str, result: str, detail: str) -> str:
 
 
 def run_dir_for(repo: Path, run_id: str) -> Path:
-    return repo / ".mentor-loop" / "runs" / run_id
+    return repo / ".mentor-loop" / "runs" / validate_run_id(run_id)
+
+
+def path_is_link_or_reparse(path: Path) -> bool:
+    if path.is_symlink():
+        return True
+    try:
+        path_stat = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as error:
+        raise RuntimeError(f"could not inspect run storage path: {path}") from error
+    attributes = getattr(path_stat, "st_file_attributes", 0)
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0))
+
+
+def ensure_run_storage_safe(repo: Path, run_dir: Path) -> None:
+    """Reject identity aliases and any run-storage path that resolves outside repo."""
+    repo_root = repo.resolve(strict=False)
+    storage_paths = [repo / ".mentor-loop", repo / ".mentor-loop" / "runs", run_dir]
+    for candidate in storage_paths:
+        if path_is_link_or_reparse(candidate):
+            raise RuntimeError(f"run storage link or reparse point is not allowed: {candidate}")
+    resolved_run = run_dir.resolve(strict=False)
+    try:
+        common = os.path.commonpath([str(repo_root), str(resolved_run)])
+    except ValueError as error:
+        raise RuntimeError(f"run directory resolves outside repository: {run_dir}") from error
+    if os.path.normcase(common) != os.path.normcase(str(repo_root)):
+        raise RuntimeError(f"run directory resolves outside repository: {run_dir}")
+
+
+def existing_run_dir_for(repo: Path, run_id: str) -> Path:
+    run_dir = run_dir_for(repo, run_id)
+    ensure_run_storage_safe(repo, run_dir)
+    if not run_dir.is_dir():
+        raise RuntimeError(f"run directory does not exist: {run_dir}")
+    stored_name = run_dir.resolve(strict=True).name
+    if stored_name != run_id:
+        raise RuntimeError(
+            f"run directory identity does not match exactly: requested={run_id}; stored={stored_name}"
+        )
+    return run_dir
+
+
+def reserve_run_dir(
+    repo: Path, task: str, requested_run_id: str | None = None, attempts: int = 8
+) -> tuple[str, Path]:
+    """Atomically reserve a fresh run directory; existing evidence is immutable."""
+    runs_dir = repo / ".mentor-loop" / "runs"
+    if requested_run_id is not None:
+        run_id = validate_run_id(requested_run_id)
+        run_dir = run_dir_for(repo, run_id)
+        ensure_run_storage_safe(repo, run_dir)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        ensure_run_storage_safe(repo, run_dir)
+        try:
+            run_dir.mkdir(exist_ok=False)
+        except FileExistsError as error:
+            raise RuntimeError(f"run directory already exists: {run_dir}") from error
+        ensure_run_storage_safe(repo, run_dir)
+        return run_id, run_dir
+
+    ensure_run_storage_safe(repo, runs_dir / "probe")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    ensure_run_storage_safe(repo, runs_dir / "probe")
+    for _attempt in range(attempts):
+        run_id = validate_run_id(now_run_id(task))
+        run_dir = run_dir_for(repo, run_id)
+        ensure_run_storage_safe(repo, run_dir)
+        try:
+            run_dir.mkdir(exist_ok=False)
+        except FileExistsError:
+            continue
+        ensure_run_storage_safe(repo, run_dir)
+        return run_id, run_dir
+    raise RuntimeError(f"could not reserve a unique run directory after {attempts} attempts")
 
 
 def summarize_gate(output: str) -> str:
@@ -214,13 +362,86 @@ def summarize_gate(output: str) -> str:
     return first[0].strip() if first else "(no output)"
 
 
+def _normalize_review_line(raw_line: str) -> str:
+    line = raw_line.strip().lstrip("-*#>").strip()
+    return re.sub(r"[*_`]", "", line).strip().lower()
+
+
 def summarize_review(review: str) -> str:
+    outcome = parse_review_outcome(review)
+    if outcome is None:
+        return "(verdict not found)"
     for line in review.splitlines():
-        if line.lower().startswith("- approved") or line.lower().startswith("- verdict"):
+        if parse_review_outcome(line) == outcome:
             return line.strip()
-        if "approved" in line.lower() or "needs fixes" in line.lower() or "stop and re-plan" in line.lower():
-            return line.strip()
-    return "(verdict not found)"
+    return outcome.replace("stop_and_replan", "Stop and re-plan").replace("needs_fixes", "Needs fixes").replace("approved", "Approved")
+
+
+def parse_review_outcome(review: str) -> str | None:
+    """Return one explicit reviewer enum, or None for missing/ambiguous prose.
+
+    The template contains all three choices on one line, so a line mentioning
+    multiple choices is an instruction, not a verdict.  A negative phrase such
+    as ``not approved`` is deliberately not accepted: the outcome must start
+    with one of the contract's three enum values after an optional ``Verdict:``.
+    """
+    outcomes: list[str] = []
+    choices = (
+        ("stop and re-plan", "stop_and_replan"),
+        ("needs fixes", "needs_fixes"),
+        ("approved", "approved"),
+    )
+    in_verdict_section = False
+    for raw_line in (review or "").splitlines():
+        stripped = raw_line.strip()
+        if stripped.startswith("#"):
+            heading = _normalize_review_line(stripped.lstrip("#")).rstrip(":").strip()
+            in_verdict_section = heading == "verdict"
+            continue
+        low = _normalize_review_line(raw_line)
+        if low.startswith("verdict:"):
+            low = low.split(":", 1)[1].strip()
+        elif not in_verdict_section:
+            continue
+        low = low.rstrip(".!").strip()
+        for phrase, outcome in choices:
+            if low == phrase:
+                outcomes.append(outcome)
+                break
+    unique = set(outcomes)
+    return unique.pop() if len(unique) == 1 else None
+
+
+def verification_summary_outcome(summary: str | None) -> str:
+    """Classify host verification without changing its persisted text format."""
+    if summary is None:
+        return "not_configured"
+    overall = re.match(r"\s*overall_status:\s*(PASS|FAIL|COULD-NOT-RUN)\b", summary, re.IGNORECASE)
+    if overall:
+        return overall.group(1).lower().replace("-", "_")
+    # Backward-compatible fallback for pre-fix artifacts: only trust the status
+    # immediately following an engine-generated verification section header.
+    statuses = re.findall(
+        r"(?mi)^##\s+(?:focused|regression):[^\n]*\nstatus:\s*(PASS|FAIL|COULD-NOT-RUN)\b",
+        summary,
+    )
+    if not statuses:
+        top_level = re.match(r"\s*status:\s*(PASS|FAIL|COULD-NOT-RUN)\b", summary, re.IGNORECASE)
+        statuses = [top_level.group(1)] if top_level else []
+    if not statuses:
+        return "could_not_run"
+    normalized = {status.upper() for status in statuses}
+    if "COULD-NOT-RUN" in normalized:
+        return "could_not_run"
+    if "FAIL" in normalized:
+        return "fail"
+    return "pass" if normalized == {"PASS"} else "could_not_run"
+
+
+def stage_result(summary: str) -> str | None:
+    """Read the machine result field emitted by ``stage_summary``."""
+    match = re.search(r"(?:^|\|)\s*result:\s*([A-Za-z_-]+)", summary or "", re.IGNORECASE)
+    return match.group(1).upper() if match else None
 
 
 def summarize_apprentice_verification(log: str) -> str:
@@ -521,7 +742,7 @@ def stage_architect_packet(repo: Path, run_id: str, config: dict[str, object] | 
     -- that draft never unlocks; only architect-ratify (C-3) does."""
     try:
         repo = ensure_git_repo(repo)
-        run_dir = run_dir_for(repo, run_id)
+        run_dir = existing_run_dir_for(repo, run_id)
         packet_path = run_dir / "architect-packet.md"
         brief_path = run_dir / "mentor-brief.md"
         if not brief_path.exists():
@@ -552,7 +773,7 @@ def stage_architect_packet(repo: Path, run_id: str, config: dict[str, object] | 
         return 0
     except Exception as error:  # fail-closed: any assembly error is BLOCKED, never a crash that hides the lock
         try:
-            run_dir = run_dir_for(ensure_git_repo(repo), run_id)
+            run_dir = existing_run_dir_for(ensure_git_repo(repo), run_id)
             write_text(run_dir / "architect-packet.md", f"# Architect consult packet -- BLOCKED\n\n- run_id: {run_id}\n- reason: {error}\n")
         except Exception:
             pass
@@ -627,7 +848,7 @@ def stage_architect_ratify(repo: Path, run_id: str, verdict_path: str, ref: str 
     never unlocks). It does NOT generate a verdict -- it only records the one it
     is given and applies the deterministic stamp that lets brief-check pass."""
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     verdict_file = Path(verdict_path)
     if not verdict_file.exists():
         print(stage_summary("architect-ratify", "BLOCKED", f"verdict file not found: {verdict_path} (no verdict, no unlock)"))
@@ -1025,6 +1246,36 @@ Diff and status:
 """
 
 
+def invalid_verification_summary(detail: str) -> str:
+    return f"overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (invalid verification spec: {detail})"
+
+
+def validate_verification_spec(spec: object) -> tuple[list[tuple[str, str, list[str]]], str | None]:
+    """Validate the complete spec before any command can execute."""
+    if not isinstance(spec, dict):
+        return [], "root must be an object"
+    normalized: list[tuple[str, str, list[str]]] = []
+    for key in ("focused", "regression"):
+        section = spec.get(key, [])
+        if not isinstance(section, list):
+            return [], f"{key} must be an array"
+        for index, check in enumerate(section):
+            if not isinstance(check, dict):
+                return [], f"{key}[{index}] must be an object"
+            name = check.get("name", "unnamed")
+            if not isinstance(name, str):
+                return [], f"{key}[{index}].name must be a string"
+            command = check.get("command")
+            if (
+                not isinstance(command, list)
+                or not command
+                or not all(isinstance(part, str) and part for part in command)
+            ):
+                return [], f"{key}[{index}].command must be a non-empty string array"
+            normalized.append((key, name or "unnamed", command))
+    return normalized, None
+
+
 def run_review_verification(repo: Path, verification_path: Path | None) -> str | None:
     """Run the task's focused+regression verification on the host so the review
     consumes REAL results (the codex sandbox cannot run python, but this engine
@@ -1039,28 +1290,31 @@ def run_review_verification(repo: Path, verification_path: Path | None) -> str |
         return None
     verification_path = Path(verification_path)
     if not verification_path.exists():
-        return "status: COULD-NOT-RUN (verification spec not found)"
+        return "overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (verification spec not found)"
     try:
         spec = json.loads(verification_path.read_text(encoding="utf-8-sig"))
     except Exception as error:  # malformed spec => fail closed
-        return f"status: COULD-NOT-RUN (unreadable verification spec: {error})"
+        return f"overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (unreadable verification spec: {error})"
+    checks, validation_error = validate_verification_spec(spec)
+    if validation_error is not None:
+        return invalid_verification_summary(validation_error)
     sections: list[str] = []
-    for key in ("focused", "regression"):
-        for check in spec.get(key, []):
-            name = check.get("name", "unnamed")
-            command = check.get("command", [])
-            try:
-                code, output = run_local(resolve_command_head(command), repo)
-                status = "PASS" if code == 0 else "FAIL"
-            except FileNotFoundError as error:
-                code, output, status = 127, str(error), "COULD-NOT-RUN"
-            except Exception as error:  # any runner error => fail closed
-                code, output, status = -1, str(error), "COULD-NOT-RUN"
-            tail = output[-1000:] if output else ""
-            sections.append(f"## {key}: {name}\nstatus: {status}\nexit_code: {code}\n\n{tail}")
+    statuses: list[str] = []
+    for key, name, command in checks:
+        try:
+            code, output = run_local(resolve_command_head(command), repo)
+            status = "PASS" if code == 0 else "FAIL"
+        except FileNotFoundError as error:
+            code, output, status = 127, str(error), "COULD-NOT-RUN"
+        except Exception as error:  # any runner error => fail closed
+            code, output, status = -1, str(error), "COULD-NOT-RUN"
+        statuses.append(status)
+        tail = output[-1000:] if output else ""
+        sections.append(f"## {key}: {name}\nstatus: {status}\nexit_code: {code}\n\n{tail}")
     if not sections:
-        return "status: COULD-NOT-RUN (no verification commands defined)"
-    return "\n\n".join(sections)
+        return "overall_status: COULD-NOT-RUN\nstatus: COULD-NOT-RUN (no verification commands defined)"
+    overall = "COULD-NOT-RUN" if "COULD-NOT-RUN" in statuses else "FAIL" if "FAIL" in statuses else "PASS"
+    return f"overall_status: {overall}\n\n" + "\n\n".join(sections)
 
 
 def write_dry_run_report(run_dir: Path, run_id: str) -> str:
@@ -1093,13 +1347,13 @@ def write_dry_run_report(run_dir: Path, run_id: str) -> str:
     return final
 
 
-def init_run(repo: Path, task: str) -> tuple[str, Path, str]:
+def init_run(repo: Path, task: str, requested_run_id: str | None = None) -> tuple[str, Path, str]:
+    if requested_run_id is not None:
+        validate_run_id(requested_run_id)
     repo = ensure_git_repo(repo)
     ensure_local_exclude(repo, [".mentor-loop/"])
     ensure_clean_worktree(repo)
-    run_id = now_run_id(task)
-    run_dir = run_dir_for(repo, run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
+    run_id, run_dir = reserve_run_dir(repo, task, requested_run_id)
     write_text(run_dir / "task.txt", task)
     active_lessons = load_active_lessons(repo)
     write_text(run_dir / "active-lessons.md", active_lessons)
@@ -1109,8 +1363,8 @@ def init_run(repo: Path, task: str) -> tuple[str, Path, str]:
     return run_id, run_dir, active_lessons
 
 
-def stage_init(repo: Path, task: str) -> int:
-    run_id, run_dir, active_lessons = init_run(repo, task)
+def stage_init(repo: Path, task: str, requested_run_id: str | None = None) -> int:
+    run_id, run_dir, active_lessons = init_run(repo, task, requested_run_id)
     print(f"run_id: {run_id}")
     print("active_lessons:")
     print(active_lessons)
@@ -1120,7 +1374,7 @@ def stage_init(repo: Path, task: str) -> int:
 
 def stage_brief_check(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     if not brief_path.exists():
         detail = "mentor-brief.md missing"
@@ -1204,7 +1458,7 @@ def stage_brief_review(repo: Path, run_id: str, config: dict[str, object]) -> in
     replacement. Always returns 0 (advisory is non-blocking by contract).
     """
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     advisory_path = run_dir / "brief-advisory.md"
 
@@ -1250,7 +1504,7 @@ def stage_brief_review(repo: Path, run_id: str, config: dict[str, object]) -> in
 
 def stage_apprentice(repo: Path, run_id: str, config: dict[str, object]) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     brief_path = run_dir / "mentor-brief.md"
     if not brief_path.exists():
         print(stage_summary("apprentice", "BLOCKED", "mentor-brief.md missing"))
@@ -1275,7 +1529,7 @@ def stage_apprentice(repo: Path, run_id: str, config: dict[str, object]) -> int:
 
 def stage_gates(repo: Path, run_id: str, config: dict[str, object]) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     python_bin = config["python"]
     blast_code = run_gate(
         [python_bin, str(PACKAGE_ROOT / "gates" / "blast-radius-check.py"), "--brief", str(run_dir / "mentor-brief.md")],
@@ -1295,13 +1549,13 @@ def stage_gates(repo: Path, run_id: str, config: dict[str, object]) -> int:
 
 def stage_snapshot(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
-    diff = git_snapshot(repo)
+    run_dir = existing_run_dir_for(repo, run_id)
+    status, status_diagnostics = read_git_porcelain_status(repo)
+    diff = render_git_snapshot(repo, status, status_diagnostics)
     write_text(run_dir / "diff-and-status.txt", diff)
     apprentice_log = read_text(run_dir / "apprentice-log.md") if (run_dir / "apprentice-log.md").exists() else ""
     apprentice_verification_summary = summarize_apprentice_verification(apprentice_log)
     write_text(run_dir / "apprentice-verification-summary.md", apprentice_verification_summary + "\n")
-    status = run_local(["git", "status", "--porcelain"], repo)[1].strip()
     changed = len([line for line in status.splitlines() if line.strip()])
     print(stage_summary("snapshot", "OK", f"changed_entries={changed}; apprentice_verification_summary=written"))
     return 0
@@ -1309,7 +1563,7 @@ def stage_snapshot(repo: Path, run_id: str) -> int:
 
 def stage_capture_lesson(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     review_path = run_dir / "review.md"
     if not review_path.exists():
         print(stage_summary("capture-lesson", "BLOCKED", "review.md missing"))
@@ -1321,7 +1575,7 @@ def stage_capture_lesson(repo: Path, run_id: str) -> int:
 
 
 def assemble_final_report(repo: Path, run_id: str) -> str:
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     gate_blast = read_text(run_dir / "gate-blast-radius.txt") if (run_dir / "gate-blast-radius.txt").exists() else ""
     gate_runtime = read_text(run_dir / "gate-runtime-floor.txt") if (run_dir / "gate-runtime-floor.txt").exists() else ""
     review = read_text(run_dir / "review.md") if (run_dir / "review.md").exists() else ""
@@ -1332,7 +1586,7 @@ def assemble_final_report(repo: Path, run_id: str) -> str:
         apprentice_log = read_text(run_dir / "apprentice-log.md") if (run_dir / "apprentice-log.md").exists() else ""
         apprentice_verification_summary = summarize_apprentice_verification(apprentice_log)
     lesson_status = "Captured one reusable lesson." if (run_dir / "lesson.md").exists() else "No reusable lesson captured."
-    status_text = run_local(["git", "status", "--porcelain"], repo)[1].strip()
+    status_text = read_git_porcelain_status(repo)[0].strip()
 
     return "\n".join(
         [
@@ -1388,7 +1642,7 @@ def assemble_final_report(repo: Path, run_id: str) -> str:
 
 def stage_report(repo: Path, run_id: str) -> int:
     repo = ensure_git_repo(repo)
-    run_dir = run_dir_for(repo, run_id)
+    run_dir = existing_run_dir_for(repo, run_id)
     required = [
         "mentor-brief.md",
         "apprentice-log.md",
@@ -1426,7 +1680,8 @@ def stage_report(repo: Path, run_id: str) -> int:
 # REPEATED failure of the SAME TARGET: repeated failure is often "the task was defined wrong,"
 # not "the apprentice is weak," so D audits the mentor's DIRECTION (goal / assumptions / scope) and
 # NEVER writes code. Constitution §1 五原则⑤; PLAYBOOK 复核回路细则. trigger_source: failure_loop.
-# Fully ADDITIVE + advisory: D never changes a run's own pass/fail verdict.
+# Architect direction is advisory and never auto-applied. The D control gate is fail-closed:
+# PARK, unknown output, or diagnostics may tighten PASS to PARK/BLOCKED, never failure to success.
 
 FAILURE_LOOP_STATE_REL = ".mentor-loop/state/brief-review-loop.json"
 FAILURE_REVIEW_METRIC_REL = ".mentor-loop/state/failure-review-metric.jsonl"
@@ -1459,7 +1714,7 @@ def compute_target_id(task: str) -> str:
     accumulate); a narrowed / re-routed successor inherits it via ``run --target <id>``.
     v0 LIMIT (cross-vendor CV P1-c): the spec's 'task_id + blast-radius' inputs are not available
     before a run, so identity is the normalized task alone -- two unrelated tasks with identical
-    wording would share counters (advisory-only impact; disambiguate with an explicit --target)."""
+    wording would share counters and a fail-closed audit quota (disambiguate with an explicit --target)."""
     normalized = " ".join((task or "").split()).strip().lower()
     return hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
 
@@ -1580,12 +1835,12 @@ def failure_triggers(entry: dict[str, object]) -> list[str]:
 def classify_review_reason(review: str) -> str:
     """Map a review verdict to a reason-code (pure), keyed on the review's own vocabulary
     (Approved / Needs fixes / Stop and re-plan). 'Stop and re-plan' => direction_unclear."""
-    low = (review or "").lower()
-    if "stop and re-plan" in low:
+    outcome = parse_review_outcome(review)
+    if outcome == "stop_and_replan":
         return "direction_unclear"
-    if "needs fixes" in low:
+    if outcome == "needs_fixes":
         return "needs_fixes"
-    if "approved" in low:
+    if outcome == "approved":
         return "approved"
     return "other"
 
@@ -1733,8 +1988,9 @@ def maybe_run_failure_review(
     signals: dict[str, object],
     config: dict[str, object] | None,
 ) -> str:
-    """BUILD-D orchestration (advisory-of-direction; NEVER changes the run's own verdict). Records
-    this attempt under ``target_id``, checks the repeated-failure triggers, and on a FRESH
+    """BUILD-D orchestration. Architect direction is advisory and NEVER auto-applied, while the
+    control gate is fail-closed and may tighten PASS to PARK/BLOCKED. Records this attempt under
+    ``target_id``, checks the repeated-failure triggers, and on a FRESH
     (un-audited) trigger routes a FAILURE packet to a CONSTRAINED architect brief-review. Fail-closed:
     no architect_command, a code-laundering verdict, an illegal verdict, or a re-failing already-audited
     target => PARK & ask owner. One audit attempt per target (owner-only reset). Returns a status."""
@@ -1828,11 +2084,24 @@ def maybe_run_failure_review(
     )
 
 
-def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = False, verification_path: str | None = None, target: str | None = None) -> int:
-    run_id = "unknown"
-    run_dir = repo / ".mentor-loop" / "runs" / run_id
+def run_full(
+    repo: Path,
+    task: str,
+    config: dict[str, object],
+    dry_run: bool = False,
+    verification_path: str | None = None,
+    target: str | None = None,
+    requested_run_id: str | None = None,
+) -> int:
+    run_id = "unallocated"
+    run_dir: Path | None = None
     try:
-        run_id, run_dir, _active_lessons = init_run(repo, task)
+        if requested_run_id is not None:
+            run_id = validate_run_id(requested_run_id)
+        if requested_run_id is None:
+            run_id, run_dir, _active_lessons = init_run(repo, task)
+        else:
+            run_id, run_dir, _active_lessons = init_run(repo, task, requested_run_id)
         target_id = target or compute_target_id(task)  # BUILD-D: stable per-target identity
         if dry_run:
             write_text(run_dir / "mentor-brief.md", "(dry run: brief not generated)\n")
@@ -1918,18 +2187,31 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
         review = read_text(run_dir / "review.md") if (run_dir / "review.md").exists() else ""
         write_text(run_dir / "review-exit-code.txt", f"exit_code: {review_code}\n")
         capture_lesson(repo, run_id, run_dir, review)
-        final = assemble_final_report(ensure_git_repo(repo), run_id).replace("- review_exit_code: session-written", f"- review_exit_code: {review_code}")
-        write_text(run_dir / "final-report.md", final)
-        print(final)
-        result = 0 if apprentice_code == 0 and gates_code == 0 and review_code == 0 else 1
-        # ml-v2 BUILD-D: post-exec failure-attribution loop. ADDITIVE — never alters `result`;
-        # any error here is swallowed so D can never break the run's own verdict.
+        review_outcome = parse_review_outcome(review)
+        verification_outcome = verification_summary_outcome(verification_results)
+        block_reasons: list[str] = []
+        if apprentice_code != 0:
+            block_reasons.append("apprentice_process")
+        if gates_code != 0:
+            block_reasons.append("deterministic_gates")
+        if review_code != 0:
+            block_reasons.append("review_process")
+        if review_outcome != "approved":
+            block_reasons.append(f"review_{review_outcome or 'invalid'}")
+        if verification_outcome not in {"pass", "not_configured"}:
+            block_reasons.append(f"verification_{verification_outcome}")
+        result = 1 if block_reasons else 0
+        # ml-v2 BUILD-D: post-exec failure-attribution may only preserve or
+        # tighten the run result.  PARK, malformed output, or a diagnostic
+        # failure is a machine-visible non-success.
+        failure_review = ""
+        failure_review_outcome = "ERROR"
         try:
             brief_blocked, brief_blocker_reason = detect_brief_blocker(apprentice_log)
             signals = {
                 "run_id": run_id,
                 "failed": result != 0,
-                "verification_failed": bool(verification_results) and "status: FAIL" in verification_results,
+                "verification_failed": verification_outcome == "fail",
                 "brief_blocker": brief_blocked,
                 "brief_blocker_reason": brief_blocker_reason,
                 "review_reason": classify_review_reason(review),
@@ -1937,13 +2219,43 @@ def run_full(repo: Path, task: str, config: dict[str, object], dry_run: bool = F
                 # the audited-target re-fail PARK, so brief_revised is not auto-wired in v0.
                 "brief_revised": False,
             }
-            print(maybe_run_failure_review(repo, run_dir, run_id, task, target_id, signals, config))
-        except Exception as d_exc:  # noqa: BLE001 -- D is advisory; must not touch the run verdict
-            append_text(run_dir / "failure-review.log", f"failure-review error (non-fatal): {d_exc}\n")
+            failure_review = maybe_run_failure_review(repo, run_dir, run_id, task, target_id, signals, config)
+            failure_review_outcome = stage_result(failure_review) or "UNKNOWN"
+            if failure_review_outcome == "PARK":
+                block_reasons.append("failure_review_park")
+                result = 1
+            elif failure_review_outcome != "OK":
+                block_reasons.append("failure_review_unknown")
+                result = 1
+        except Exception as d_exc:  # noqa: BLE001 -- diagnostic failure blocks success but still writes the final report
+            append_text(run_dir / "failure-review.log", f"failure-review error (run blocked): {d_exc}\n")
+            block_reasons.append("failure_review_error")
+            result = 1
+        run_outcome = "PARK" if failure_review_outcome == "PARK" else "BLOCKED" if result else "PASS"
+        metadata = "\n".join(
+            [
+                f"- review_exit_code: {review_code}",
+                f"- semantic_review_outcome: {review_outcome or 'invalid'}",
+                f"- host_verification_outcome: {verification_outcome}",
+                f"- failure_review_outcome: {failure_review_outcome}",
+                f"- run_outcome: {run_outcome}",
+                f"- run_block_reasons: {', '.join(block_reasons) if block_reasons else 'none'}",
+            ]
+        )
+        final = assemble_final_report(ensure_git_repo(repo), run_id).replace(
+            "- review_exit_code: session-written",
+            metadata,
+            1,
+        )
+        write_text(run_dir / "final-report.md", final)
+        print(final)
+        if failure_review:
+            print(failure_review)
         return result
     except Exception as exc:
         final = f"# Mentor Loop Final Report\n\n- run_id: {run_id}\n- status: failed\n- error: {exc}\n"
-        write_text(run_dir / "final-report.md", final)
+        if run_dir is not None:
+            write_text(run_dir / "final-report.md", final)
         print(final, file=sys.stderr)
         return 1
 
@@ -1959,10 +2271,12 @@ def build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--verification", default=None, help="JSON spec of focused/regression commands to run before the review")
     run_parser.add_argument("--target", default=None, help="BUILD-D: stable target_id to inherit (a narrowed/re-routed successor passes the parent's frozen id; omit to derive from the task)")
+    run_parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
 
     init_parser = subparsers.add_parser("init", help="Create a run directory and prompt artifacts")
     init_parser.add_argument("task", nargs="+")
     init_parser.add_argument("--repo", default=".")
+    init_parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
 
     for name in ("brief-check", "brief-review", "apprentice", "gates", "snapshot", "capture-lesson", "report"):
         stage_parser = subparsers.add_parser(name)
@@ -1991,12 +2305,13 @@ def parse_legacy(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--repo", default=".", help="Target repo root")
     parser.add_argument("--config", default=str(PACKAGE_ROOT / "mentor-loop.config.json"))
     parser.add_argument("--dry-run", action="store_true", help="Create prompts/artifacts but do not invoke Codex")
+    parser.add_argument("--run-id", default=None, help="Create-only external correlation id; an existing id is rejected")
     return parser.parse_args(argv)
 
 
 def first_positional(argv: list[str]) -> str | None:
     skip_next = False
-    options_with_values = {"--repo", "--config", "--run", "--verification", "--target", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
+    options_with_values = {"--repo", "--config", "--run", "--run-id", "--verification", "--target", "--verdict", "--ref", "-C", "-m", "-s", "-o"}
     for item in argv:
         if skip_next:
             skip_next = False
@@ -2020,16 +2335,30 @@ def main() -> int:
     first = first_positional(sys.argv[1:])
     if first not in commands:
         args = parse_legacy(sys.argv[1:])
-        return run_full(Path(args.repo).resolve(), " ".join(args.task), load_config(Path(args.config)), args.dry_run)
+        return run_full(
+            Path(args.repo).resolve(),
+            " ".join(args.task),
+            load_config(Path(args.config)),
+            args.dry_run,
+            requested_run_id=args.run_id,
+        )
 
     parser = build_parser()
     args = parser.parse_args()
     command = args.command
     repo = Path(args.repo).resolve()
     if command == "run":
-        return run_full(repo, " ".join(args.task), load_config(Path(args.config)), args.dry_run, args.verification, args.target)
+        return run_full(
+            repo,
+            " ".join(args.task),
+            load_config(Path(args.config)),
+            args.dry_run,
+            args.verification,
+            args.target,
+            args.run_id,
+        )
     if command == "init":
-        return stage_init(repo, " ".join(args.task))
+        return stage_init(repo, " ".join(args.task), args.run_id)
     if command == "brief-check":
         return stage_brief_check(repo, args.run)
     if command == "brief-review":

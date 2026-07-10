@@ -6,6 +6,9 @@
     "HANDOVER.md",
     "START_HERE.md",
     "README.md",
+    "README.zh.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
     "adoption-guide.md",
     "operator-runbook.md",
     "quickstart.md",
@@ -28,7 +31,6 @@
     "mentor-review-template.md",
     "lesson-capture-template.md",
     "lesson-ledger-example.md",
-    ".mentor-loop/lessons.md",
     "subagents/strong-mentor.md",
     "subagents/weak-apprentice.md",
     "subagents/strong-reviewer.md",
@@ -96,6 +98,7 @@
     "evals/codex-live.config.json",
     "evals/scorecard-template.csv",
     "evals/fixtures/collect-tasks.fixture.json",
+    "evals/fixtures/package-lessons.md",
     "evals/tasks/mock-smoke.json",
     "evals/tasks/REAL_TASKS_REQUIRED.md",
     "evals/tasks/execa-1193-kill-zero-ci.json",
@@ -122,5 +125,5 @@
     "evidence-index.md",
     "package-readiness.md"
   ],
-  "known_limit": "jc-687 supports same-repo lesson transfer and Mentor Brief auditability. pflow-389 only provides a verification-incomplete cross-repo boundary note. Cost reduction and product-level uplift remain unproven."
+  "known_limit": "The A′ measurement design was falsified. The underlying lesson-transfer, product-level uplift, cost, and judgment-compounding theses remain unproven, not disproven; further product-level validation is not pursued. Historical author-run cases and verification-incomplete boundary records are not product proof."
 }

@@ -1,6 +1,12 @@
 # Start Here
 
-Mentor Loop has four entry paths. Pick one.
+> **Archive status (2026-07-10):** this navigation page describes a preserved
+> research prototype. `README.md` is the current claim source of truth. The A′
+> measurement design was falsified; the underlying thesis remains unproven, not
+> disproven; further product-level validation is not pursued.
+
+Mentor Loop has four historical entry paths. Pick one for inspection or deliberate
+component reuse.
 
 ## I Want To Understand The Idea
 
@@ -12,10 +18,10 @@ Read:
 4. `package-readiness.md`
 5. `evidence-index.md`
 
-Use this path if you are evaluating the thesis:
+Use this path to inspect the historical thesis, not to treat it as established:
 
-> Weak models lack judgment. Turn judgment into artifacts, gates, and durable
-> memory, and weak models can approach stronger-model behavior on repeated work.
+> Can making selected judgments explicit in artifacts, gates, and memory improve
+> weak-model work on repeated tasks?
 
 ## I Want To Try It In My Repo
 
@@ -35,9 +41,10 @@ repo root and run:
 /mentor-loop "fix <bug description>"
 ```
 
-This should create `.mentor-loop/` artifacts, spawn the cheap apprentice
-subagent, run both gates, review the diff, and capture a lesson only if review
-finds a reusable mistake.
+The preserved wiring was designed to create `.mentor-loop/` artifacts, spawn the
+configured apprentice subagent, run both gates, review the diff, and capture a
+lesson only if review finds a reusable mistake. This is a historical replay path,
+not a product-outcome claim; use a disposable repository first.
 
 Copy these first:
 
@@ -85,7 +92,7 @@ Important boundaries:
 - Mentor Brief success-rate lift is unproven; auditability is the clearer
   signal.
 
-## I Want To Publish Or Discuss It
+## I Want To Review The Historical Publication Materials
 
 Read:
 
@@ -94,10 +101,10 @@ Read:
 3. `package-readiness.md`
 4. `evidence-index.md`
 
-Safe headline:
+Evidence-bounded summary:
 
-> Lessons transferred. Briefs mostly bought auditability. Gates were the real
-> prize.
+> Author-run cases produced inspectable briefs and deterministic gates; causal
+> uplift, cost advantage, and judgment compounding remain unproven.
 
 Do not claim:
 
@@ -106,7 +113,7 @@ Do not claim:
 - cross-repo transfer,
 - benchmark results.
 
-## I Want To Build On It
+## I Want To Reuse A Component
 
 Read:
 
@@ -115,7 +122,8 @@ Read:
 3. `future/lesson-ledger-v1.md`
 4. `operator-runbook.md`
 
-Recommended automation order:
+There is no active v1 roadmap. If an owner explicitly reopens development, the
+archived proposal ordered possible work as follows:
 
 1. Lesson capture with metadata.
 2. Lesson consolidation review.
@@ -123,9 +131,8 @@ Recommended automation order:
 4. Apprentice execution skill.
 5. Mentor review skill.
 
-Do not start with model routing. The point is not to guess whether a weak model
-can handle the task. The point is to make the task easier for the weak model to
-handle.
+Do not infer demand for model routing from these records. New automation or product
+claims require a separate decision and evidence contract.
 
 ## File Map
 
@@ -162,7 +169,7 @@ Evidence:
 - `experiments/`
 - `evidence-index.md`
 
-Publication:
+Historical publication drafts:
 
 - `writeup-draft.md`
 - `publication-assets.md`
@@ -172,7 +179,7 @@ Release check:
 
 - `tools/verify-package.py`
 
-Future integration:
+Archived integration proposals:
 
 - `integration-map.md`
 - `future/README.md`

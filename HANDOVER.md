@@ -1,5 +1,11 @@
 # Mentor Loop Lean v0 Handover
 
+> **Archive status (2026-07-10): preserved research prototype; superseded as the
+> default architecture.** Keep the repo, experiments, reports, and verified mechanisms.
+> There is no active product roadmap or obligation to complete the baseline. Reuse components
+> deliberately; do not turn the fixed three-role loop into a new governance core. Rollback tag:
+> `mentor-loop-v2-preserved-20260710`.
+
 This package is ready for an outside agent to evaluate. Start here if you are
 not part of the original build session.
 
@@ -11,15 +17,15 @@ reliably.
 
 ## Current Status
 
-- Package shape: lean v0, intentionally not a general agent framework.
-- Primary claim: lessons plus gates are the main durable lever; Mentor Briefs
-  mostly buy auditability.
+- Package shape: preserved lean v0 research prototype, intentionally not a general agent framework.
+- Claim close-out: mechanisms completed; auditability partially answered; A′ measurement design
+  falsified; further product-level validation of weak-model uplift/cost/compounding not pursued.
 - Stage engine: `tools/mentor-loop.py`.
 - Eval runner: `evals/run-task.py`.
 - Eval suite: 12 real GitHub tasks, balanced 6 Python / 6 JavaScript-TypeScript.
 - Known polluted tasks excluded: `jc-685`, `jc-687`.
-- Latest verifier status: green, including zip manifest check.
-- Latest zip: `../mentor-loop-lean-v0.zip` relative to this directory.
+- Latest directory verifier status: green; 206 unit tests pass at close-out.
+- Release zip: not present in this worktree; rebuild and pass `--zip` before publication.
 
 ## What To Read First
 
@@ -28,13 +34,14 @@ reliably.
 3. `writeup-draft.md` - current public case-study draft.
 4. `reports/eval-suite-v0-report.md` - what the eval suite contains.
 5. `evals/RUNBOOK.md` - how to run the live baseline.
-6. `.mentor-loop/lessons.md` - current judgment ledger.
+6. `evals/fixtures/package-lessons.md` - versioned lesson seed for reproducible evals.
 
 ## Important Paths
 
 ```text
 tools/mentor-loop.py                  # stage engine and one-shot run mode
 evals/run-task.py                     # headless eval runner
+evals/fixtures/package-lessons.md     # versioned, release-frozen eval seed
 evals/tasks/*.json                    # 12 real tasks plus mock-smoke
 gates/blast-radius-check.py           # changed-file / artifact scope gate
 gates/runtime-floor-check.py          # Python runtime compatibility gate
@@ -54,10 +61,10 @@ python outputs\mentor-loop-lean-v0\tools\verify-package.py
 python outputs\mentor-loop-lean-v0\tools\verify-package.py --zip outputs\mentor-loop-lean-v0.zip
 ```
 
-Expected result: every line starts with `OK`, ending with:
+With `--zip`, every line should start with `OK`, ending with:
 
 ```text
-OK  zip matches manifest (96 entries)
+OK  zip matches manifest (<current manifest entry count> entries)
 ```
 
 ## How To Run A Small Live Probe
@@ -84,7 +91,7 @@ specific absolute path.
 
 - `raw-weak`: weak model gets only issue text.
 - `lessons-only`: weak model gets issue text plus active lessons from this
-  package's `.mentor-loop/lessons.md`.
+  package's versioned `evals/fixtures/package-lessons.md` seed.
 - `full-loop`: one-shot Mentor Loop path with strong brief/review and weak
   apprentice.
 
@@ -115,14 +122,13 @@ The scorecard includes:
 - This is a case study, not a statistical benchmark.
 - Cost reduction is unmeasured; GUI/subagent token accounting is incomplete.
 - Cross-repo lesson transfer is not yet a product claim.
-- Full 12-task baseline still requires live execution in an unrestricted
-  terminal.
-- Do not add token accounting or three-slot model config until the first full
-  baseline is actually run.
+- The 12-task baseline was not completed; the earlier experiments are insufficient
+  for a product claim.
 
-## Do Not Build Yet
+## Archived Conditional Freeze Checklist
 
-Park these until after live baseline data exists:
+This is not a current backlog. Only if an owner explicitly resumes this research,
+complete a new measurement contract and live baseline before considering:
 
 - token accounting;
 - three-slot strong/weak/reviewer config;
@@ -172,6 +178,6 @@ The last local package verification passed after Work Order 3:
 - `infra_error` classification;
 - per-repo source clone cache;
 - baseline-relative regression classification;
-- package lessons seeded into `lessons-only`;
-- zip contents match manifest.
+- versioned package lesson seed injected into `lessons-only`;
+- release zip must be rebuilt and checked against the current manifest.
 
